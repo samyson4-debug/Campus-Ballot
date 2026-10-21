@@ -86,6 +86,7 @@ def student_dashboard(user: dict = Depends(require_student)):
                 "has_voted": bool(voted),
                 "candidates": [dict(c) for c in candidates],
             })
+        open_elections_count = sum(1 for e in elections if e["badge"] == "Voting Open")
     finally:
         conn.close()
 
@@ -93,11 +94,25 @@ def student_dashboard(user: dict = Depends(require_student)):
         "full_name": user.get("full_name", ""),
         "student_id": user.get("student_id", ""),
         "total_elections": total_elections,
+        "open_elections_count": open_elections_count,
         "applications_count": apps_count,
+        "my_applications_count": apps_count,
         "votes_cast": votes_cast,
+        "my_votes_count": votes_cast,
         "approved_applications": approved,
+        "approved_candidacies_count": approved,
         "elections": elections,
     }
+
+
+# ---------------------------------------------------------------------------
+# All available elections for student
+# ---------------------------------------------------------------------------
+@router.get("/elections")
+def get_student_elections(user: dict = Depends(require_student)):
+    """Return all elections with their live status and badges."""
+    dash = student_dashboard(user)
+    return dash["elections"]
 
 
 # ---------------------------------------------------------------------------

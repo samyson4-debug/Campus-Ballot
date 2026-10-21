@@ -287,13 +287,15 @@ async function loadVotingScreen(payload) {
         const dashboard = await api.get('/api/student/dashboard');
         const openElections = (dashboard.elections || []).filter((e) => e.badge === 'Voting Open' || e.badge === 'Upcoming' || e.badge === 'Vote Submitted');
 
-        select.innerHTML = '<option value="">Choose an election...</option>';
-        openElections.forEach((el) => {
-            const opt = document.createElement('option');
-            opt.value = el.id;
-            opt.textContent = `${el.name} [${el.badge}]`;
-            select.appendChild(opt);
-        });
+        if (openElections.length > 0) {
+            select.innerHTML = '<option value="">Choose an election...</option>';
+            openElections.forEach((el) => {
+                const opt = document.createElement('option');
+                opt.value = el.id;
+                opt.textContent = `${el.name} [${el.badge}]`;
+                select.appendChild(opt);
+            });
+        }
 
         // Preselect if navigated via "Vote Now" button
         if (payload && payload.electionId) {
@@ -301,7 +303,7 @@ async function loadVotingScreen(payload) {
             loadBallot(payload.electionId);
         }
     } catch (err) {
-        showToast('Failed to load elections: ' + err.message, 'error');
+        console.warn('Failed to refresh elections:', err);
     }
 }
 
@@ -453,22 +455,25 @@ function setupNominationForm() {
 
 async function loadNominationScreen(payload) {
     const select = document.getElementById('apply-election-select');
-    select.innerHTML = '<option value="">Select an election...</option>';
 
     try {
         const dashboard = await api.get('/api/student/dashboard');
-        (dashboard.elections || []).forEach((el) => {
-            const opt = document.createElement('option');
-            opt.value = el.id;
-            opt.textContent = `${el.name} (${el.badge})`;
-            select.appendChild(opt);
-        });
+        const elections = dashboard.elections || [];
+        if (elections.length > 0) {
+            select.innerHTML = '<option value="">Select an election...</option>';
+            elections.forEach((el) => {
+                const opt = document.createElement('option');
+                opt.value = el.id;
+                opt.textContent = `${el.name} (${el.badge})`;
+                select.appendChild(opt);
+            });
+        }
 
         if (payload && payload.electionId) {
             select.value = payload.electionId;
         }
     } catch (err) {
-        showToast('Failed to load elections: ' + err.message, 'error');
+        console.warn('Failed to refresh nomination elections:', err);
     }
 }
 

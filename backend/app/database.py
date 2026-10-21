@@ -13,7 +13,7 @@ SECURITY-CRITICAL:
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .config import settings
@@ -174,10 +174,76 @@ def _bootstrap_admin(conn: sqlite3.Connection) -> None:
         logger.info("Default admin '%s' created from env.", settings.ADMIN_USERNAME)
 
 
+def _seed_default_elections(conn: sqlite3.Connection) -> None:
+    """
+    Seed initial elections if the elections table is empty,
+    so that students and administrators immediately have elections available.
+    """
+    count = conn.execute("SELECT COUNT(*) AS c FROM elections").fetchone()["c"]
+    if count > 0:
+        return
+
+    tz = ZoneInfo(settings.APP_TIMEZONE)
+    now = datetime.now(tz)
+
+    # 1. Active general election (Open for voting & nominations)
+    start_1 = (now - timedelta(days=2)).strftime(DATE_FORMAT)
+    end_1 = (now + timedelta(days=14)).strftime(DATE_FORMAT)
+    cursor = conn.execute(
+        "INSERT INTO elections (name, start_time, end_time, status, results_declared) "
+        "VALUES (?, ?, ?, 'ON', 0)",
+        ("Student Council General Elections 2026", start_1, end_1),
+    )
+    eid_1 = cursor.lastrowid
+
+    sample_candidates_1 = [
+        ("Alex Rivera", "Computer Science"),
+        ("Samantha Chen", "Electrical Engineering"),
+        ("Marcus Johnson", "Business Administration"),
+    ]
+    for name, dept in sample_candidates_1:
+        conn.execute(
+            "INSERT INTO candidates (election_id, name, department) VALUES (?, ?, ?)",
+            (eid_1, name, dept),
+        )
+
+    # 2. Department Representative Election (Open for voting & nominations)
+    start_2 = (now - timedelta(days=1)).strftime(DATE_FORMAT)
+    end_2 = (now + timedelta(days=21)).strftime(DATE_FORMAT)
+    cursor = conn.execute(
+        "INSERT INTO elections (name, start_time, end_time, status, results_declared) "
+        "VALUES (?, ?, ?, 'ON', 0)",
+        ("Department Representative Election 2026", start_2, end_2),
+    )
+    eid_2 = cursor.lastrowid
+
+    sample_candidates_2 = [
+        ("Priya Sharma", "Information Technology"),
+        ("Liam Davies", "Mechanical Engineering"),
+    ]
+    for name, dept in sample_candidates_2:
+        conn.execute(
+            "INSERT INTO candidates (election_id, name, department) VALUES (?, ?, ?)",
+            (eid_2, name, dept),
+        )
+
+    # 3. Cultural & Sports Committee Elections (Upcoming)
+    start_3 = (now + timedelta(days=3)).strftime(DATE_FORMAT)
+    end_3 = (now + timedelta(days=25)).strftime(DATE_FORMAT)
+    conn.execute(
+        "INSERT INTO elections (name, start_time, end_time, status, results_declared) "
+        "VALUES (?, ?, ?, 'ON', 0)",
+        ("Cultural & Sports Committee Elections 2026", start_3, end_3),
+    )
+
+    conn.commit()
+    logger.info("Default sample elections seeded successfully.")
+
+
 def create_database() -> None:
     """
     Ensure the database file and all tables exist, run migrations,
-    and bootstrap the default admin.
+    bootstrap default admin, and seed initial elections.
     """
     # Ensure parent directory exists.
     db_dir = os.path.dirname(settings.DATABASE_PATH)
@@ -189,6 +255,7 @@ def create_database() -> None:
         conn.executescript(_SCHEMA_SQL)
         _migrate(conn)
         _bootstrap_admin(conn)
+        _seed_default_elections(conn)
     finally:
         conn.close()
 

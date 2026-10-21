@@ -17,7 +17,12 @@ class Settings:
     PBKDF2_ITERATIONS: int = int(os.getenv("PBKDF2_ITERATIONS", "600000"))
 
     # --- Database ---
-    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "/data/campus_ballot.db")
+    DATABASE_PATH: str = os.getenv(
+        "DATABASE_PATH",
+        "/data/campus_ballot.db"
+        if os.path.exists("/data")
+        else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "campus_ballot.db")),
+    )
 
     # --- Admin bootstrap ---
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
