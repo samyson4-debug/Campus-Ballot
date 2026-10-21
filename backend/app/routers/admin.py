@@ -477,7 +477,8 @@ def get_audit_log(
         entries = [dict(r) for r in rows]
     finally:
         conn.close()
-    return {"total": total, "entries": entries}
+    return {"total": total, "entries": entries, "logs": entries}
+
 
 
 # ---------------------------------------------------------------------------

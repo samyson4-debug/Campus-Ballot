@@ -743,13 +743,17 @@ async function loadAuditLog() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading audit trail...</td></tr>';
 
     try {
-        const logs = await api.get(`/api/admin/audit-log?limit=${AUDIT_LIMIT}&offset=${auditOffset}`);
+        const data = await api.get(`/api/admin/audit-log?limit=${AUDIT_LIMIT}&offset=${auditOffset}`);
         tbody.innerHTML = '';
 
+        const logs = Array.isArray(data) ? data : (data.entries || data.logs || []);
+        const total = typeof data.total === 'number' ? data.total : logs.length;
+
         const pageNum = Math.floor(auditOffset / AUDIT_LIMIT) + 1;
-        pageInfo.textContent = `Page ${pageNum}`;
+        const totalPages = Math.max(1, Math.ceil(total / AUDIT_LIMIT));
+        pageInfo.textContent = `Page ${pageNum} of ${totalPages}`;
         btnPrev.disabled = auditOffset === 0;
-        btnNext.disabled = !logs || logs.length < AUDIT_LIMIT;
+        btnNext.disabled = auditOffset + logs.length >= total || logs.length < AUDIT_LIMIT;
 
         if (!logs || logs.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No audit events recorded.</td></tr>';
