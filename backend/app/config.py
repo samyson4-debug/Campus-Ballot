@@ -26,7 +26,7 @@ class Settings:
 
     # --- Admin bootstrap ---
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "Admin@Campus2026!")
 
     # --- Timezone ---
     APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "Asia/Kolkata")

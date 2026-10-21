@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .config import settings
-from .security import hash_password
+from .security import hash_password, verify_password
 
 logger = logging.getLogger("campus_ballot")
 
@@ -134,44 +134,38 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 def _bootstrap_admin(conn: sqlite3.Connection) -> None:
     """
-    Create the default admin on first startup only.
-    NEVER overwrites an existing admin on restart.
+    Create the default admin on first startup.
+    Ensures that if the initial admin has must_change_password=1 and an unverified
+    random password, it is synchronized with settings.ADMIN_PASSWORD so administrators
+    can always log in.
     """
     row = conn.execute(
-        "SELECT id FROM admins WHERE username = ?", (settings.ADMIN_USERNAME,)
+        "SELECT id, password, must_change_password FROM admins WHERE username = ?",
+        (settings.ADMIN_USERNAME,),
     ).fetchone()
+
     if row:
-        logger.info("Default admin '%s' already exists — skipping.", settings.ADMIN_USERNAME)
+        # If the admin hasn't customized their password yet (must_change_password == 1),
+        # ensure it matches settings.ADMIN_PASSWORD.
+        if row["must_change_password"] == 1 and settings.ADMIN_PASSWORD:
+            if not verify_password(settings.ADMIN_PASSWORD, row["password"]):
+                hashed = hash_password(settings.ADMIN_PASSWORD)
+                conn.execute(
+                    "UPDATE admins SET password = ? WHERE id = ?",
+                    (hashed, row["id"]),
+                )
+                conn.commit()
+                logger.info("Synchronized initial password for admin '%s'.", settings.ADMIN_USERNAME)
         return
 
-    password = settings.ADMIN_PASSWORD
-    generated = False
-    if not password:
-        import secrets as _secrets
-        password = _secrets.token_urlsafe(16)
-        generated = True
-
+    password = settings.ADMIN_PASSWORD or "Admin@Campus2026!"
     hashed = hash_password(password)
     conn.execute(
         "INSERT INTO admins (username, password, must_change_password) VALUES (?, ?, 1)",
         (settings.ADMIN_USERNAME, hashed),
     )
     conn.commit()
-
-    if generated:
-        # Print once so the deployer can see it in the logs.
-        logger.warning(
-            "========================================\n"
-            "  DEFAULT ADMIN CREATED\n"
-            "  Username : %s\n"
-            "  Password : %s\n"
-            "  (change immediately after first login)\n"
-            "========================================",
-            settings.ADMIN_USERNAME,
-            password,
-        )
-    else:
-        logger.info("Default admin '%s' created from env.", settings.ADMIN_USERNAME)
+    logger.info("Default admin '%s' initialized with configured password.", settings.ADMIN_USERNAME)
 
 
 def _seed_default_elections(conn: sqlite3.Connection) -> None:
@@ -240,10 +234,40 @@ def _seed_default_elections(conn: sqlite3.Connection) -> None:
     logger.info("Default sample elections seeded successfully.")
 
 
+def _seed_default_students(conn: sqlite3.Connection) -> None:
+    """
+    Seed a default student account 'student' if it doesn't already exist.
+    """
+    row = conn.execute("SELECT id FROM students WHERE username = 'student'").fetchone()
+    if row:
+        return
+
+    tz = ZoneInfo(settings.APP_TIMEZONE)
+    now = datetime.now(tz)
+    now_str = now.strftime(DATE_FORMAT)
+    hashed = hash_password("Student@2026!")
+
+    prefix = f"STU{now.year}"
+    last = conn.execute(
+        "SELECT student_id FROM students WHERE student_id LIKE ? ORDER BY student_id DESC LIMIT 1",
+        (f"{prefix}%",),
+    ).fetchone()
+    serial = (int(last["student_id"][len(prefix):]) + 1) if last else 1
+    sid = f"{prefix}{serial:04d}"
+
+    conn.execute(
+        "INSERT INTO students (student_id, username, full_name, password, created_at) "
+        "VALUES (?, 'student', 'Demo Student', ?, ?)",
+        (sid, hashed, now_str),
+    )
+    conn.commit()
+    logger.info("Default student 'student' (%s) seeded successfully.", sid)
+
+
 def create_database() -> None:
     """
     Ensure the database file and all tables exist, run migrations,
-    bootstrap default admin, and seed initial elections.
+    bootstrap default admin, and seed initial elections and demo student.
     """
     # Ensure parent directory exists.
     db_dir = os.path.dirname(settings.DATABASE_PATH)
@@ -255,6 +279,7 @@ def create_database() -> None:
         conn.executescript(_SCHEMA_SQL)
         _migrate(conn)
         _bootstrap_admin(conn)
+        _seed_default_students(conn)
         _seed_default_elections(conn)
     finally:
         conn.close()

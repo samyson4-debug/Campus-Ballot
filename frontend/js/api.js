@@ -26,7 +26,7 @@ export function escapeHtml(str) {
  */
 async function request(url, options = {}) {
     const defaults = {
-        credentials: 'same-origin',
+        credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
             ...(options.headers || {}),

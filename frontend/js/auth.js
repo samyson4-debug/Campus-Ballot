@@ -73,6 +73,21 @@ function switchTab(target) {
 loginTabBtn.addEventListener('click', () => switchTab('login'));
 registerTabBtn.addEventListener('click', () => switchTab('register'));
 
+// Quick Demo Credentials Fill
+document.getElementById('btn-fill-admin')?.addEventListener('click', () => {
+    switchTab('login');
+    loginIdentifier.value = 'admin';
+    loginPassword.value = 'Admin@Campus2026!';
+    loginError.textContent = '';
+});
+
+document.getElementById('btn-fill-student')?.addEventListener('click', () => {
+    switchTab('login');
+    loginIdentifier.value = 'student';
+    loginPassword.value = 'Student@2026!';
+    loginError.textContent = '';
+});
+
 // Password Visibility Toggles
 document.querySelectorAll('.password-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
