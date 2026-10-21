@@ -1,0 +1,33 @@
+# ==============================================================================
+# Campus Ballot — Render Blueprint Specification
+# Deploys a persistent-disk enabled web service using Docker runtime
+# ==============================================================================
+
+services:
+  - type: web
+    name: campus-ballot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    plan: starter  # Note: Render persistent disks require a paid plan (Starter+)
+    disk:
+      name: campus-ballot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false  # Must be filled securely in Render Dashboard or prompts on deploy
+      - key: DATABASE_PATH
+        value: /data/campus_ballot.db
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_HOURS
+        value: "8"
+      - key: PBKDF2_ITERATIONS
+        value: "600000"

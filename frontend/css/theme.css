@@ -1,0 +1,70 @@
+/*
+ * Campus Ballot — Theme CSS
+ * Dark theme with color tokens via CSS custom properties.
+ */
+
+:root {
+    /* === Core Palette === */
+    --bg-body:        #0a0e1a;
+    --bg-primary:     #111827;
+    --bg-secondary:   #1a2035;
+    --bg-tertiary:    #1e2640;
+    --bg-card:        #151c2e;
+    --bg-card-hover:  #1a2340;
+    --bg-input:       #0d1220;
+
+    /* === Accent Colors === */
+    --accent:         #6366f1;    /* Indigo */
+    --accent-light:   #818cf8;
+    --accent-dark:    #4f46e5;
+    --accent-glow:    rgba(99, 102, 241, 0.15);
+    --accent-glow-strong: rgba(99, 102, 241, 0.3);
+
+    /* === Semantic Colors === */
+    --success:        #10b981;
+    --success-bg:     rgba(16, 185, 129, 0.12);
+    --warning:        #f59e0b;
+    --warning-bg:     rgba(245, 158, 11, 0.12);
+    --danger:         #ef4444;
+    --danger-bg:      rgba(239, 68, 68, 0.12);
+    --info:           #3b82f6;
+    --info-bg:        rgba(59, 130, 246, 0.12);
+
+    /* === Text Colors === */
+    --text-primary:   #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted:     #64748b;
+    --text-white:     #ffffff;
+
+    /* === Borders === */
+    --border-color:   #1e293b;
+    --border-accent:  rgba(99, 102, 241, 0.3);
+
+    /* === Shadows === */
+    --shadow-sm:      0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md:      0 4px 14px rgba(0, 0, 0, 0.4);
+    --shadow-lg:      0 10px 30px rgba(0, 0, 0, 0.5);
+    --shadow-glow:    0 0 20px rgba(99, 102, 241, 0.15);
+
+    /* === Border Radius === */
+    --radius-sm:      6px;
+    --radius-md:      10px;
+    --radius-lg:      16px;
+    --radius-xl:      20px;
+    --radius-full:    9999px;
+
+    /* === Transitions === */
+    --transition-fast:    0.15s ease;
+    --transition-normal:  0.25s ease;
+    --transition-slow:    0.4s ease;
+
+    /* === Glassmorphism === */
+    --glass-bg:        rgba(17, 24, 39, 0.75);
+    --glass-border:    rgba(255, 255, 255, 0.06);
+    --glass-blur:      20px;
+
+    /* === Gradients === */
+    --gradient-accent:  linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+    --gradient-bg:      linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #0f1629 100%);
+    --gradient-card:    linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.03));
+}

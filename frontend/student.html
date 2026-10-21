@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Portal — Campus Ballot</title>
+    <meta name="description" content="Student voting portal for college elections. Cast votes securely and track applications.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/theme.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+    <!-- Mobile Sidebar Toggle -->
+    <button type="button" id="mobile-toggle" class="mobile-toggle" aria-label="Toggle navigation menu">
+        ☰
+    </button>
+
+    <div class="app-layout">
+        <!-- Student Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <header class="sidebar-header">
+                <div class="sidebar-logo">
+                    <span class="logo-icon" aria-hidden="true">🗳️</span>
+                    <span>Campus Ballot</span>
+                </div>
+                <div class="sidebar-subtitle">Student Portal</div>
+            </header>
+
+            <nav class="sidebar-nav" aria-label="Student Navigation">
+                <button type="button" class="nav-item active" data-view="dashboard">
+                    <span class="nav-icon" aria-hidden="true">🏠</span>
+                    <span>Dashboard</span>
+                </button>
+                <button type="button" class="nav-item" data-view="voting">
+                    <span class="nav-icon" aria-hidden="true">🗳️</span>
+                    <span>Cast Ballot</span>
+                </button>
+                <button type="button" class="nav-item" data-view="apply">
+                    <span class="nav-icon" aria-hidden="true">✍️</span>
+                    <span>Candidate Nomination</span>
+                </button>
+                <button type="button" class="nav-item" data-view="my-applications">
+                    <span class="nav-icon" aria-hidden="true">📋</span>
+                    <span>My Applications</span>
+                </button>
+                <button type="button" class="nav-item" data-view="profile">
+                    <span class="nav-icon" aria-hidden="true">👤</span>
+                    <span>My Profile</span>
+                </button>
+            </nav>
+
+            <footer class="sidebar-footer">
+                <div class="sidebar-user">
+                    <div class="sidebar-avatar" id="student-avatar">S</div>
+                    <div>
+                        <div class="sidebar-username" id="student-display-name">Student</div>
+                        <div class="sidebar-role" id="student-id-badge">STU...</div>
+                    </div>
+                </div>
+                <button type="button" id="btn-logout" class="btn btn-danger btn-sm" style="width: 100%; margin-top: 8px;">
+                    🚪 Sign Out
+                </button>
+            </footer>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content" id="main-content">
+
+            <!-- VIEW: DASHBOARD -->
+            <section id="view-dashboard" class="view-section">
+                <header class="page-header">
+                    <h1 class="page-title" id="greeting-title">Welcome back!</h1>
+                    <p class="page-subtitle" id="greeting-subtitle">Your student voting workspace</p>
+                </header>
+
+                <!-- 4 Personal Stats -->
+                <div class="stats-grid" id="student-stats">
+                    <div class="card stat-card">
+                        <div class="stat-icon" aria-hidden="true">⚡</div>
+                        <div class="stat-value" id="stat-open-elections">0</div>
+                        <div class="stat-label">Active Elections</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon" aria-hidden="true">🗳️</div>
+                        <div class="stat-value" id="stat-votes-cast">0</div>
+                        <div class="stat-label">My Votes Cast</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon" aria-hidden="true">📝</div>
+                        <div class="stat-value" id="stat-my-applications">0</div>
+                        <div class="stat-label">My Applications</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon" aria-hidden="true">🎖️</div>
+                        <div class="stat-value" id="stat-approved-candidacies">0</div>
+                        <div class="stat-label">Approved Candidacies</div>
+                    </div>
+                </div>
+
+                <!-- Active & Upcoming Elections Section -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <h2 class="card-title">Campus Elections</h2>
+                        <span class="form-help">One student &bull; One vote per election</span>
+                    </div>
+                    <div class="elections-grid" id="elections-card-grid">
+                        <div class="loading-overlay">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Participation History -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">My Voting Activity</h2>
+                    </div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Election</th>
+                                    <th>Status</th>
+                                    <th>Voted Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-history-tbody">
+                                <tr><td colspan="3" style="text-align:center;">Loading activity...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: VOTING SCREEN -->
+            <section id="view-voting" class="view-section hidden">
+                <header class="page-header">
+                    <h1 class="page-title">Cast Your Official Ballot</h1>
+                    <p class="page-subtitle">Your vote is secret, recorded anonymously, and cannot be altered</p>
+                </header>
+
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="form-group" style="max-width: 450px; margin-bottom: 0;">
+                        <label for="voting-election-select" class="form-label">Select Active Election</label>
+                        <select id="voting-election-select" class="form-input">
+                            <option value="">Choose an election...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Candidates Selection Card -->
+                <div id="voting-ballot-card" class="card hidden">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title" id="voting-election-title">Ballot</h2>
+                            <p class="form-help">Select exactly one candidate below to cast your ballot.</p>
+                        </div>
+                        <span class="badge badge-open">Voting Open</span>
+                    </div>
+
+                    <form id="form-cast-vote">
+                        <div class="radio-list" id="candidates-radio-list">
+                            <!-- Populated with candidate radio options -->
+                        </div>
+
+                        <div id="voting-error" class="form-error" style="margin-top: 16px;" role="alert"></div>
+
+                        <div style="margin-top: 24px; display: flex; gap: 12px; align-items: center;">
+                            <button type="submit" id="btn-submit-ballot" class="btn btn-primary btn-lg">
+                                🗳️ Cast Vote
+                            </button>
+                            <span class="form-help">Confirmation modal required before submission.</span>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Success Screen (hidden until vote confirmed) -->
+                <div id="voting-success-card" class="card hidden">
+                    <div class="success-screen">
+                        <div class="success-icon" aria-hidden="true">✓</div>
+                        <h2 class="success-title">Vote Recorded Successfully!</h2>
+                        <p class="success-message">
+                            Your ballot has been securely and immutably cast in the election.<br>
+                            Thank you for participating in campus democracy!
+                        </p>
+                        <button type="button" class="btn btn-primary btn-lg" id="btn-back-to-dashboard" style="margin-top: 24px;">
+                            ← Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Empty state when no election chosen or no open elections -->
+                <div id="voting-empty-state" class="empty-state">
+                    <div class="empty-icon">🗳️</div>
+                    <div class="empty-text">Select an active election above to view the ballot candidates.</div>
+                </div>
+            </section>
+
+            <!-- VIEW: CANDIDATE NOMINATION -->
+            <section id="view-apply" class="view-section hidden">
+                <header class="page-header">
+                    <h1 class="page-title">Candidate Nomination</h1>
+                    <p class="page-subtitle">File your candidacy application for upcoming student elections</p>
+                </header>
+
+                <div class="card" style="max-width: 680px;">
+                    <form id="form-candidate-apply">
+                        <div class="form-group">
+                            <label for="apply-election-select" class="form-label">Election</label>
+                            <select id="apply-election-select" class="form-input" required>
+                                <option value="">Select an election...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="apply-post-select" class="form-label">Position / Post</label>
+                            <select id="apply-post-select" class="form-input" required>
+                                <option value="">Choose a position...</option>
+                                <option value="President">President</option>
+                                <option value="Vice President">Vice President</option>
+                                <option value="Secretary">Secretary</option>
+                                <option value="Treasurer">Treasurer</option>
+                                <option value="Class Representative">Class Representative</option>
+                                <option value="Cultural Secretary">Cultural Secretary</option>
+                                <option value="Sports Secretary">Sports Secretary</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="apply-department" class="form-label">Department / Class</label>
+                            <input
+                                type="text"
+                                id="apply-department"
+                                class="form-input"
+                                placeholder="e.g. Computer Science, Year 3"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                <label for="apply-manifesto" class="form-label">Campaign Manifesto</label>
+                                <span id="manifesto-count" class="form-help">0 / 2000</span>
+                            </div>
+                            <textarea
+                                id="apply-manifesto"
+                                class="form-input"
+                                maxlength="2000"
+                                placeholder="Describe your vision, goals, and why fellow students should vote for you (max 2000 characters)..."
+                                required
+                            ></textarea>
+                        </div>
+
+                        <div id="apply-error" class="form-error" role="alert"></div>
+
+                        <button type="submit" id="btn-submit-nomination" class="btn btn-success btn-lg" style="margin-top: 16px;">
+                            Submit Nomination
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- VIEW: MY APPLICATIONS -->
+            <section id="view-my-applications" class="view-section hidden">
+                <header class="page-header">
+                    <h1 class="page-title">My Applications</h1>
+                    <p class="page-subtitle">Track the approval status of your candidate nominations</p>
+                </header>
+
+                <div class="card">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Election</th>
+                                    <th>Post</th>
+                                    <th>Department</th>
+                                    <th>Manifesto</th>
+                                    <th>Status</th>
+                                    <th>Applied Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="my-applications-tbody">
+                                <tr><td colspan="7" style="text-align:center;">Loading applications...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: PROFILE -->
+            <section id="view-profile" class="view-section hidden">
+                <header class="page-header">
+                    <h1 class="page-title">Student Profile</h1>
+                    <p class="page-subtitle">Your credentials and voting participation record</p>
+                </header>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+                    <div class="card">
+                        <h2 class="card-title" style="margin-bottom: 20px;">Identity Information</h2>
+                        <div class="form-group">
+                            <label class="form-label">Full Name</label>
+                            <div id="profile-fullname" style="font-size: 1.1rem; font-weight: 600; color: var(--text-primary);">—</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Student ID</label>
+                            <div id="profile-studentid" style="font-size: 1.1rem; font-weight: 700; color: var(--accent-light); font-family: monospace;">—</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Username</label>
+                            <div id="profile-username" style="color: var(--text-secondary);">—</div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label">Registration Date</label>
+                            <div id="profile-registered-at" style="color: var(--text-muted);">—</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title" style="margin-bottom: 20px;">Ballot Participation History</h2>
+                        <p class="form-help" style="margin-bottom: 12px;">
+                            🛡️ Privacy Guarantee: Under our zero-knowledge secret ballot policy, your vote timestamps are audited, but your candidate choices are never stored with your identity.
+                        </p>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Election</th>
+                                        <th>Voted At</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="profile-history-tbody">
+                                    <tr><td colspan="2" style="text-align:center;">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- JavaScript module -->
+    <script type="module" src="/js/student.js"></script>
+</body>
+</html>

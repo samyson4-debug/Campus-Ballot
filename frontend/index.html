@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Ballot — College Election Voting System</title>
+    <meta name="description" content="Campus Ballot is a secure, role-based college election voting platform for students and administrators.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/theme.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body class="auth-page">
+    <!-- Animated particle canvas background -->
+    <canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+    <!-- Auth Card -->
+    <main class="auth-card" id="auth-container">
+        <header class="auth-header">
+            <div class="auth-logo">
+                <span class="logo-icon" aria-hidden="true">🗳️</span>
+                <span>Campus Ballot</span>
+            </div>
+            <p class="auth-subtitle">College Election Voting System</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="auth-tabs" role="tablist" aria-label="Authentication Options">
+            <button
+                type="button"
+                id="tab-login-btn"
+                class="auth-tab-btn active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="login-form"
+            >
+                Sign In
+            </button>
+            <button
+                type="button"
+                id="tab-register-btn"
+                class="auth-tab-btn"
+                role="tab"
+                aria-selected="false"
+                aria-controls="register-form"
+            >
+                Student Register
+            </button>
+        </nav>
+
+        <!-- Login Form -->
+        <form id="login-form" role="tabpanel" aria-labelledby="tab-login-btn" novalidate>
+            <div class="form-group">
+                <label for="login-identifier" class="form-label">Student ID or Username</label>
+                <input
+                    type="text"
+                    id="login-identifier"
+                    class="form-input"
+                    placeholder="e.g. STU20260001 or admin"
+                    autocomplete="username"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="login-password" class="form-label">Password</label>
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        id="login-password"
+                        class="form-input"
+                        placeholder="Enter your password"
+                        autocomplete="current-password"
+                        required
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        data-target="login-password"
+                        aria-label="Show password"
+                    >
+                        👁‍🗨
+                    </button>
+                </div>
+            </div>
+
+            <div id="login-error" class="form-error" role="alert" aria-live="polite"></div>
+
+            <button type="submit" id="login-submit-btn" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 12px;">
+                Sign In
+            </button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="hidden" role="tabpanel" aria-labelledby="tab-register-btn" novalidate>
+            <div class="form-group">
+                <label for="reg-fullname" class="form-label">Full Name</label>
+                <input
+                    type="text"
+                    id="reg-fullname"
+                    class="form-input"
+                    placeholder="e.g. Jane Doe"
+                    autocomplete="name"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="reg-username" class="form-label">Username</label>
+                <input
+                    type="text"
+                    id="reg-username"
+                    class="form-input"
+                    placeholder="At least 4 characters"
+                    autocomplete="username"
+                    required
+                >
+                <p class="form-help">Must be at least 4 characters (letters, numbers, underscores).</p>
+            </div>
+
+            <div class="form-group">
+                <label for="reg-password" class="form-label">Password</label>
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        id="reg-password"
+                        class="form-input"
+                        placeholder="Create a strong password"
+                        autocomplete="new-password"
+                        required
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        data-target="reg-password"
+                        aria-label="Show password"
+                    >
+                        👁‍🗨
+                    </button>
+                </div>
+                <!-- Strength Meter -->
+                <div class="strength-meter" aria-hidden="true">
+                    <div id="strength-fill" class="strength-fill"></div>
+                </div>
+                <div id="strength-text" class="strength-text" aria-live="polite"></div>
+                <p class="form-help">≥8 chars with uppercase, lowercase, number, and special symbol.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="reg-confirm-password" class="form-label">Confirm Password</label>
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        id="reg-confirm-password"
+                        class="form-input"
+                        placeholder="Re-enter password"
+                        autocomplete="new-password"
+                        required
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        data-target="reg-confirm-password"
+                        aria-label="Show password"
+                    >
+                        👁‍🗨
+                    </button>
+                </div>
+            </div>
+
+            <div id="reg-error" class="form-error" role="alert" aria-live="polite"></div>
+
+            <button type="submit" id="reg-submit-btn" class="btn btn-success btn-lg" style="width: 100%; margin-top: 12px;">
+                Create Student Account
+            </button>
+        </form>
+
+        <footer class="auth-footer">
+            <p>Campus Ballot Secure Voting System &bull; One Student, One Vote</p>
+        </footer>
+    </main>
+
+    <!-- JavaScript entry point -->
+    <script type="module" src="/js/auth.js"></script>
+</body>
+</html>
