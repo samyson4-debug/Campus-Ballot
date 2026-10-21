@@ -5,6 +5,23 @@ Loads all settings from environment variables with sensible defaults.
 
 import os
 import secrets
+from pathlib import Path
+
+# Load .env file if available (from backend or project root)
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        Path(__file__).resolve().parent.parent / ".env",
+        Path(__file__).resolve().parent.parent.parent / ".env",
+    ]
+    for _p in _env_paths:
+        if _p.exists():
+            load_dotenv(_p)
+            break
+    else:
+        load_dotenv()
+except ImportError:
+    pass
 
 
 class Settings:
@@ -16,7 +33,11 @@ class Settings:
     SESSION_HOURS: int = int(os.getenv("SESSION_HOURS", "8"))
     PBKDF2_ITERATIONS: int = int(os.getenv("PBKDF2_ITERATIONS", "600000"))
 
-    # --- Database ---
+    # --- Database (PostgreSQL or SQLite) ---
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip()
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
     DATABASE_PATH: str = os.getenv(
         "DATABASE_PATH",
         "/data/campus_ballot.db"

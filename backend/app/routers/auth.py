@@ -272,8 +272,21 @@ def _set_cookie(response: Response, token: str) -> None:
 # Logout
 # ---------------------------------------------------------------------------
 @router.post("/logout")
-def logout(response: Response):
-    """Clear the session cookie."""
+def logout(request: Request, response: Response):
+    """Clear the session cookie and record logout event."""
+    token = request.cookies.get("session_token")
+    if token:
+        try:
+            from ..security import decode_access_token
+            payload = decode_access_token(token)
+            write_audit(
+                action="logout",
+                actor_type=payload.get("role", "user"),
+                actor_id=str(payload.get("sub", "")),
+                details=f"User logged out ({payload.get('role', 'user')})",
+            )
+        except Exception:
+            pass
     response.delete_cookie("session_token", path="/")
     return {"message": "Logged out."}
 

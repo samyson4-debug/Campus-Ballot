@@ -30,17 +30,34 @@ def _now_str() -> str:
     return datetime.now(tz).strftime(DATE_FORMAT)
 
 
-def get_connection() -> sqlite3.Connection:
+def is_postgres() -> bool:
+    """Return True if DATABASE_URL is set for PostgreSQL."""
+    return bool(settings.DATABASE_URL)
+
+
+def get_connection():
     """
-    Open a new SQLite connection with safety pragmas.
-    Callers are responsible for closing it (use as a context manager).
+    Open a database connection.
+    - If settings.DATABASE_URL is set, connects to PostgreSQL (Render Postgres, Supabase, etc.).
+    - Otherwise, opens a SQLite connection with WAL mode and foreign keys enabled.
     """
+    if is_postgres():
+        from .postgres_adapter import PostgresConnectionWrapper, PSYCOPG2_AVAILABLE
+        if not PSYCOPG2_AVAILABLE:
+            raise RuntimeError(
+                "psycopg2-binary is required for PostgreSQL. Run: pip install psycopg2-binary"
+            )
+        import psycopg2
+        raw_conn = psycopg2.connect(settings.DATABASE_URL)
+        return PostgresConnectionWrapper(raw_conn)
+
     conn = sqlite3.connect(settings.DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
     return conn
+
 
 
 # ---------------------------------------------------------------------------
@@ -118,11 +135,13 @@ CREATE INDEX IF NOT EXISTS idx_applications_election_status
 """
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
+def _migrate(conn) -> None:
     """
-    Idempotent migration: add ``results_declared`` to elections if it was
+    Idempotent migration: add results_declared to elections if it was
     created by an older schema version.
     """
+    if is_postgres():
+        return
     cursor = conn.execute("PRAGMA table_info(elections)")
     columns = {row["name"] for row in cursor.fetchall()}
     if "results_declared" not in columns:
@@ -269,6 +288,21 @@ def create_database() -> None:
     Ensure the database file and all tables exist, run migrations,
     bootstrap default admin, and seed initial elections and demo student.
     """
+    if is_postgres():
+        from .postgres_adapter import POSTGRES_SCHEMA_SQL
+        conn = get_connection()
+        try:
+            conn.execute(POSTGRES_SCHEMA_SQL)
+            conn.commit()
+            _bootstrap_admin(conn)
+            _seed_default_students(conn)
+            _seed_default_elections(conn)
+            conn.commit()
+        finally:
+            conn.close()
+        logger.info("PostgreSQL database initialized successfully via DATABASE_URL.")
+        return
+
     # Ensure parent directory exists.
     db_dir = os.path.dirname(settings.DATABASE_PATH)
     if db_dir:
