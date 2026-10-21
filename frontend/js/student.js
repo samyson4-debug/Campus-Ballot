@@ -10,6 +10,7 @@ import { showToast, showModal, createBadge, formatDate, showLoading, showEmpty }
 let currentStudent = null;
 let currentView = 'dashboard';
 let dashboardData = null;
+let nominationElectionsCache = [];
 
 // DOM Cache
 const sidebar = document.getElementById('sidebar');
@@ -42,6 +43,7 @@ async function initStudentApp() {
         setupLogout();
         setupVotingForm();
         setupNominationForm();
+        setupResultsModal();
 
         // Initial view
         switchView('dashboard');
@@ -125,11 +127,11 @@ async function loadDashboard() {
     try {
         dashboardData = await api.get('/api/student/dashboard');
 
-        // Personal Stats
-        document.getElementById('stat-open-elections').textContent = dashboardData.open_elections_count;
-        document.getElementById('stat-votes-cast').textContent = dashboardData.my_votes_count;
-        document.getElementById('stat-my-applications').textContent = dashboardData.my_applications_count;
-        document.getElementById('stat-approved-candidacies').textContent = dashboardData.approved_candidacies_count;
+        // Personal Stats with fallback attributes
+        document.getElementById('stat-open-elections').textContent = dashboardData.open_elections_count ?? dashboardData.active_elections ?? 0;
+        document.getElementById('stat-votes-cast').textContent = dashboardData.my_votes_count ?? dashboardData.votes_cast ?? 0;
+        document.getElementById('stat-my-applications').textContent = dashboardData.my_applications_count ?? dashboardData.applications_count ?? 0;
+        document.getElementById('stat-approved-candidacies').textContent = dashboardData.approved_candidacies_count ?? dashboardData.approved_candidates ?? 0;
 
         // Elections Cards
         cardGrid.innerHTML = '';
@@ -141,7 +143,8 @@ async function loadDashboard() {
                 card.className = 'card';
 
                 const badgeClass = getBadgeCss(el.badge);
-                const canVote = el.badge === 'Voting Open';
+                const canVote = el.badge === 'Voting Open' && !el.has_voted;
+                const isDeclared = el.results_declared || el.badge === 'Results Available';
 
                 card.innerHTML = `
                     <div class="card-header">
@@ -155,15 +158,23 @@ async function loadDashboard() {
                         Closes: <strong>${formatDate(el.end_time)}</strong>
                     </p>
                     <div style="margin-bottom: 16px;">
-                        <span class="form-help">Approved Candidates: <strong>${el.candidate_count}</strong></span>
+                        <span class="form-help">Approved Candidates: <strong>${el.candidate_count ?? (el.candidates ? el.candidates.length : 0)}</strong></span>
                     </div>
                 `;
 
                 const footerDiv = document.createElement('div');
                 footerDiv.style.display = 'flex';
+                footerDiv.style.flexDirection = 'column';
                 footerDiv.style.gap = '8px';
 
-                if (canVote) {
+                if (isDeclared) {
+                    const btnResults = document.createElement('button');
+                    btnResults.className = 'btn btn-primary btn-sm';
+                    btnResults.style.width = '100%';
+                    btnResults.textContent = '🏆 View Results & Winner';
+                    btnResults.onclick = () => showStudentResultsModal(el.id);
+                    footerDiv.appendChild(btnResults);
+                } else if (canVote) {
                     const btnVote = document.createElement('button');
                     btnVote.className = 'btn btn-primary btn-sm';
                     btnVote.style.width = '100%';
@@ -175,6 +186,8 @@ async function loadDashboard() {
                     votedSpan.style.fontSize = '0.85rem';
                     votedSpan.style.color = '#a78bfa';
                     votedSpan.style.fontWeight = '600';
+                    votedSpan.style.textAlign = 'center';
+                    votedSpan.style.padding = '4px';
                     votedSpan.textContent = '✓ Ballot Submitted';
                     footerDiv.appendChild(votedSpan);
                 } else {
@@ -323,29 +336,33 @@ async function loadBallot(electionId) {
 
     try {
         const data = await api.get(`/api/student/elections/${electionId}/candidates`);
-        titleEl.textContent = `${data.election_name} Ballot`;
+        titleEl.textContent = `${data.election_name || 'Election'} Ballot`;
+
+        const candidates = Array.isArray(data) ? data : (data.candidates || []);
 
         candidatesList.innerHTML = '';
-        if (!data.candidates || data.candidates.length === 0) {
-            candidatesList.innerHTML = '<p class="form-help" style="padding: 20px; text-align: center;">No approved candidates registered for this election.</p>';
+        if (!candidates || candidates.length === 0) {
+            candidatesList.innerHTML = '<p class="form-help" style="padding: 20px; text-align: center;">No approved candidates registered for this election yet.</p>';
             return;
         }
 
-        data.candidates.forEach((cand) => {
+        candidates.forEach((cand) => {
             const label = document.createElement('label');
             label.className = 'radio-item';
+            const candName = cand.name || cand.candidate_name || `Candidate #${cand.id}`;
+            const candDept = cand.department || cand.post || 'General Candidate';
 
             label.innerHTML = `
                 <input
                     type="radio"
                     name="candidate_choice"
                     value="${cand.id}"
-                    data-name="${escapeHtml(cand.name)}"
+                    data-name="${escapeHtml(candName)}"
                     required
                 >
                 <div class="radio-item-info">
-                    <div class="radio-item-name">${escapeHtml(cand.name)}</div>
-                    <div class="radio-item-dept">${escapeHtml(cand.department || 'General Candidate')}</div>
+                    <div class="radio-item-name">${escapeHtml(candName)}</div>
+                    <div class="radio-item-dept">${escapeHtml(candDept)}</div>
                 </div>
             `;
 
@@ -396,12 +413,46 @@ async function submitVote(electionId, candidateId) {
 // ============================================================
 // 3. Candidate Nomination (Apply)
 // ============================================================
+function updateNominationSchedule(selectedId) {
+    const scheduleCard = document.getElementById('nomination-election-schedule');
+    const nameEl = document.getElementById('nomination-election-name');
+    const startEl = document.getElementById('nomination-start-date');
+    const endEl = document.getElementById('nomination-end-date');
+    const badgeEl = document.getElementById('nomination-status-badge');
+
+    if (!scheduleCard) return;
+
+    if (!selectedId) {
+        scheduleCard.style.display = 'none';
+        return;
+    }
+
+    const el = (nominationElectionsCache || []).find((e) => String(e.id) === String(selectedId));
+    if (el) {
+        if (nameEl) nameEl.textContent = el.name;
+        if (startEl) startEl.textContent = formatDate(el.start_time);
+        if (endEl) endEl.textContent = formatDate(el.end_time);
+        if (badgeEl) {
+            const badgeClass = getBadgeCss(el.badge);
+            badgeEl.innerHTML = `<span class="badge ${badgeClass}">${el.badge || el.state || 'Scheduled'}</span>`;
+        }
+        scheduleCard.style.display = 'block';
+    } else {
+        scheduleCard.style.display = 'none';
+    }
+}
+
 function setupNominationForm() {
     const form = document.getElementById('form-candidate-apply');
+    const select = document.getElementById('apply-election-select');
     const manifestoInput = document.getElementById('apply-manifesto');
     const countEl = document.getElementById('manifesto-count');
     const errorEl = document.getElementById('apply-error');
     const submitBtn = document.getElementById('btn-submit-nomination');
+
+    select.addEventListener('change', () => {
+        updateNominationSchedule(select.value);
+    });
 
     manifestoInput.addEventListener('input', () => {
         const len = manifestoInput.value.length;
@@ -441,6 +492,7 @@ function setupNominationForm() {
             showToast('Nomination application submitted successfully!', 'success');
             form.reset();
             countEl.textContent = '0 / 2000';
+            updateNominationSchedule('');
             switchView('my-applications');
         } catch (err) {
             // Master prompt scenario: "Already applied"
@@ -458,10 +510,11 @@ async function loadNominationScreen(payload) {
 
     try {
         const dashboard = await api.get('/api/student/dashboard');
-        const elections = dashboard.elections || [];
-        if (elections.length > 0) {
-            select.innerHTML = '<option value="">Select an election...</option>';
-            elections.forEach((el) => {
+        nominationElectionsCache = dashboard.elections || [];
+
+        select.innerHTML = '<option value="">Select an election...</option>';
+        if (nominationElectionsCache.length > 0) {
+            nominationElectionsCache.forEach((el) => {
                 const opt = document.createElement('option');
                 opt.value = el.id;
                 opt.textContent = `${el.name} (${el.badge})`;
@@ -472,6 +525,8 @@ async function loadNominationScreen(payload) {
         if (payload && payload.electionId) {
             select.value = payload.electionId;
         }
+
+        updateNominationSchedule(select.value);
     } catch (err) {
         console.warn('Failed to refresh nomination elections:', err);
     }
@@ -566,6 +621,106 @@ async function loadProfileView() {
         });
     } catch (err) {
         showToast('Failed to load profile: ' + err.message, 'error');
+    }
+}
+
+// ============================================================
+// 6. Results & Winner Modal
+// ============================================================
+function setupResultsModal() {
+    const modal = document.getElementById('modal-student-results');
+    document.getElementById('btn-close-results-modal')?.addEventListener('click', () => {
+        modal?.classList.remove('active');
+    });
+    document.getElementById('btn-done-results-modal')?.addEventListener('click', () => {
+        modal?.classList.remove('active');
+    });
+    modal?.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+        }
+    });
+}
+
+async function showStudentResultsModal(electionId) {
+    const modal = document.getElementById('modal-student-results');
+    const titleEl = document.getElementById('student-results-title');
+    const metaEl = document.getElementById('student-results-meta');
+    const winnerBanner = document.getElementById('student-results-winner-banner');
+    const winnerNameEl = document.getElementById('student-results-winner-name');
+    const winnerMetaEl = document.getElementById('student-results-winner-meta');
+    const chartEl = document.getElementById('student-results-chart');
+    const tbody = document.getElementById('student-results-tbody');
+
+    if (!modal) return;
+
+    chartEl.innerHTML = '<div class="loading-overlay" style="min-height: 80px;"><div class="loading-spinner"></div></div>';
+    tbody.innerHTML = '';
+    winnerBanner.style.display = 'none';
+    modal.classList.add('active');
+
+    try {
+        const results = await api.get(`/api/student/results/${electionId}`);
+        const totalVotes = results.total_votes ?? 0;
+        titleEl.textContent = `${results.election_name || 'Election'} — Final Tally`;
+        metaEl.textContent = `Total votes cast: ${totalVotes}`;
+
+        if (results.winner && results.winner.vote_count > 0) {
+            const winnerPct = totalVotes > 0 ? ((results.winner.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+            winnerBanner.style.display = 'block';
+            winnerNameEl.textContent = `🏆 ${results.winner.candidate_name}`;
+            winnerMetaEl.textContent = `${results.winner.department || 'General'} • ${results.winner.vote_count} votes (${winnerPct}% of total votes)`;
+        } else if (results.results && results.results.length > 0 && results.results[0].vote_count > 0) {
+            const top = results.results[0];
+            const winnerPct = totalVotes > 0 ? ((top.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+            winnerBanner.style.display = 'block';
+            winnerNameEl.textContent = `🏆 ${top.candidate_name}`;
+            winnerMetaEl.textContent = `${top.department || 'General'} • ${top.vote_count} votes (${winnerPct}% of total votes)`;
+        } else {
+            winnerBanner.style.display = 'none';
+        }
+
+        chartEl.innerHTML = '';
+        tbody.innerHTML = '';
+
+        if (!results.results || results.results.length === 0) {
+            chartEl.innerHTML = '<p class="form-help" style="text-align: center; padding: 12px;">No candidates were registered for this election.</p>';
+            return;
+        }
+
+        const sorted = [...results.results].sort((a, b) => b.vote_count - a.vote_count);
+        const maxVotes = Math.max(...sorted.map((c) => c.vote_count), 1);
+
+        sorted.forEach((item, index) => {
+            const pct = totalVotes > 0 ? ((item.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+            const barWidth = Math.max((item.vote_count / maxVotes) * 100, item.vote_count > 0 ? 5 : 2);
+
+            const barBox = document.createElement('div');
+            barBox.className = 'result-bar-container';
+            barBox.innerHTML = `
+                <div class="result-bar-label">
+                    <span class="result-bar-name">${index === 0 && item.vote_count > 0 ? '👑 ' : ''}${escapeHtml(item.candidate_name)} (${escapeHtml(item.department || 'General')})</span>
+                    <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
+                </div>
+                <div class="result-bar-track">
+                    <div class="result-bar-fill" style="width: ${barWidth}%;"></div>
+                </div>
+            `;
+            chartEl.appendChild(barBox);
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-weight: 700;">#${index + 1}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${index === 0 && item.vote_count > 0 ? '🏆 ' : ''}${escapeHtml(item.candidate_name)}</td>
+                <td>${escapeHtml(item.department || '—')}</td>
+                <td style="font-weight: 700; color: var(--accent-light);">${item.vote_count}</td>
+                <td>${pct}%</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        showToast('Failed to load results: ' + err.message, 'error');
+        modal.classList.remove('active');
     }
 }
 

@@ -58,7 +58,15 @@ def dashboard(user: dict = Depends(require_admin)):
     finally:
         conn.close()
 
+    counts = {
+        "total_elections": total_elections,
+        "active_elections": active_elections,
+        "total_candidates": total_candidates,
+        "registered_students": registered_students,
+        "total_votes": total_votes,
+    }
     return {
+        "counts": counts,
         "total_elections": total_elections,
         "active_elections": active_elections,
         "total_candidates": total_candidates,
@@ -436,10 +444,17 @@ def get_results(election_id: int, user: dict = Depends(require_admin)):
         ).fetchall()
 
         results = [dict(r) for r in rows]
+        total_votes = sum(r["vote_count"] for r in results)
+        winner = results[0] if (results and results[0]["vote_count"] > 0) else None
     finally:
         conn.close()
 
-    return {"election_name": election["name"], "results": results}
+    return {
+        "election_name": election["name"],
+        "total_votes": total_votes,
+        "winner": winner,
+        "results": results,
+    }
 
 
 # ---------------------------------------------------------------------------

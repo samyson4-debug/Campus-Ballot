@@ -137,11 +137,12 @@ async function loadDashboard() {
     try {
         const data = await api.get('/api/admin/dashboard');
 
-        document.getElementById('stat-total-elections').textContent = data.counts.total_elections;
-        document.getElementById('stat-active-elections').textContent = data.counts.active_elections;
-        document.getElementById('stat-total-candidates').textContent = data.counts.total_candidates;
-        document.getElementById('stat-registered-students').textContent = data.counts.registered_students;
-        document.getElementById('stat-total-votes').textContent = data.counts.total_votes;
+        const counts = data.counts || data;
+        document.getElementById('stat-total-elections').textContent = counts.total_elections ?? 0;
+        document.getElementById('stat-active-elections').textContent = counts.active_elections ?? 0;
+        document.getElementById('stat-total-candidates').textContent = counts.total_candidates ?? 0;
+        document.getElementById('stat-registered-students').textContent = counts.registered_students ?? 0;
+        document.getElementById('stat-total-votes').textContent = counts.total_votes ?? 0;
 
         const tbody = document.getElementById('recent-elections-tbody');
         tbody.innerHTML = '';
@@ -639,8 +640,30 @@ async function renderElectionResults(electionId) {
         placeholder.classList.add('hidden');
         displayArea.classList.remove('hidden');
 
+        const totalVotes = results.total_votes ?? 0;
         document.getElementById('results-election-title').textContent = `${results.election_name} — Final Tally`;
-        document.getElementById('results-election-meta').textContent = `Total votes cast: ${results.total_votes}`;
+        document.getElementById('results-election-meta').textContent = `Total votes cast: ${totalVotes}`;
+
+        const winnerBanner = document.getElementById('results-winner-banner');
+        const winnerNameEl = document.getElementById('results-winner-name');
+        const winnerMetaEl = document.getElementById('results-winner-meta');
+
+        if (winnerBanner && winnerNameEl && winnerMetaEl) {
+            if (results.winner && results.winner.vote_count > 0) {
+                const winnerPct = totalVotes > 0 ? ((results.winner.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+                winnerBanner.style.display = 'block';
+                winnerNameEl.textContent = `🏆 ${results.winner.candidate_name}`;
+                winnerMetaEl.textContent = `${results.winner.department || 'General'} • ${results.winner.vote_count} votes (${winnerPct}% of total votes)`;
+            } else if (results.results && results.results.length > 0 && results.results[0].vote_count > 0) {
+                const top = results.results[0];
+                const winnerPct = totalVotes > 0 ? ((top.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+                winnerBanner.style.display = 'block';
+                winnerNameEl.textContent = `🏆 ${top.candidate_name}`;
+                winnerMetaEl.textContent = `${top.department || 'General'} • ${top.vote_count} votes (${winnerPct}% of total votes)`;
+            } else {
+                winnerBanner.style.display = 'none';
+            }
+        }
 
         chartContainer.innerHTML = '';
         tableBody.innerHTML = '';

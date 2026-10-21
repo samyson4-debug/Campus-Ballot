@@ -559,3 +559,101 @@ def test_concurrent_double_vote():
     ).fetchone()["c"]
     conn.close()
     assert count == 1
+
+
+# ===========================================================================
+# Verifications for Fixes: Ballot Candidates, Dashboard Stats, Winner Counting
+# ===========================================================================
+def test_student_candidates_ballot_endpoint():
+    cookies = _admin_login()
+    tz = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(tz)
+
+    resp = client.post("/api/admin/elections", json={
+        "name": "Ballot Candidates Test",
+        "start_time": (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M"),
+        "end_time": (now + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M"),
+    }, cookies=cookies)
+    eid = resp.json()["id"]
+
+    conn = get_connection()
+    conn.execute("INSERT INTO candidates (election_id, name, department) VALUES (?, 'Member Alice', 'IT')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department) VALUES (?, 'Member Bob', 'Mech')", (eid,))
+    conn.commit()
+    conn.close()
+
+    sid = _register_student(username="ballotvoter")
+    scookies = _student_login(sid)
+
+    # Fetch candidates as student
+    cand_resp = client.get(f"/api/student/elections/{eid}/candidates", cookies=scookies)
+    assert cand_resp.status_code == 200
+    data = cand_resp.json()
+    assert "candidates" in data
+    assert len(data["candidates"]) == 2
+    assert data["election_name"] == "Ballot Candidates Test"
+    assert data["candidates"][0]["name"] in ["Member Alice", "Member Bob"]
+
+
+def test_dashboard_stats_and_participation():
+    cookies = _admin_login()
+    adm_dash = client.get("/api/admin/dashboard", cookies=cookies).json()
+    assert "counts" in adm_dash
+    assert "active_elections" in adm_dash["counts"]
+    assert "total_candidates" in adm_dash["counts"]
+    assert "registered_students" in adm_dash["counts"]
+    assert "total_votes" in adm_dash["counts"]
+
+    sid = _register_student(username="statsstudent")
+    scookies = _student_login(sid)
+    stu_dash = client.get("/api/student/dashboard", cookies=scookies).json()
+    assert "open_elections_count" in stu_dash
+    assert "active_elections" in stu_dash
+    assert "approved_candidacies_count" in stu_dash
+    assert "participation_history" in stu_dash
+    assert isinstance(stu_dash["elections"], list)
+
+
+def test_results_winner_counting():
+    cookies = _admin_login()
+    tz = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(tz)
+
+    resp = client.post("/api/admin/elections", json={
+        "name": "Winner Count Test",
+        "start_time": (now - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M"),
+        "end_time": (now + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M"),
+    }, cookies=cookies)
+    eid = resp.json()["id"]
+
+    conn = get_connection()
+    conn.execute("INSERT INTO candidates (election_id, name, department) VALUES (?, 'Winner Charlie', 'CSE')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department) VALUES (?, 'Runner Dave', 'ECE')", (eid,))
+    conn.commit()
+    c_winner = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Winner Charlie'", (eid,)).fetchone()["id"]
+    conn.close()
+
+    client.post(f"/api/admin/elections/{eid}/on", cookies=cookies)
+
+    # Student 1 votes for Winner Charlie
+    sid1 = _register_student(username="winnervoter1")
+    scookies1 = _student_login(sid1)
+    client.post(f"/api/student/elections/{eid}/vote", json={"candidate_id": c_winner}, cookies=scookies1)
+
+    # Stop election and declare results
+    client.post(f"/api/admin/elections/{eid}/off", cookies=cookies)
+    client.post(f"/api/admin/elections/{eid}/declare", cookies=cookies)
+
+    # Check Admin Results
+    adm_res = client.get(f"/api/admin/results/{eid}", cookies=cookies).json()
+    assert adm_res["total_votes"] == 1
+    assert adm_res["winner"] is not None
+    assert adm_res["winner"]["candidate_name"] == "Winner Charlie"
+    assert adm_res["winner"]["vote_count"] == 1
+
+    # Check Student Results
+    stu_res = client.get(f"/api/student/results/{eid}", cookies=scookies1).json()
+    assert stu_res["total_votes"] == 1
+    assert stu_res["winner"] is not None
+    assert stu_res["winner"]["candidate_name"] == "Winner Charlie"
+

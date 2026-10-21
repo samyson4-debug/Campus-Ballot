@@ -85,7 +85,16 @@ def student_dashboard(user: dict = Depends(require_student)):
                 "badge": badge,
                 "has_voted": bool(voted),
                 "candidates": [dict(c) for c in candidates],
+                "candidate_count": len(candidates),
             })
+        history_rows = conn.execute(
+            "SELECT v.id, v.voted_at, e.name AS election_name "
+            "FROM votes v "
+            "JOIN elections e ON v.election_id = e.id "
+            "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 5",
+            (user["id"],),
+        ).fetchall()
+        participation_history = [dict(h) for h in history_rows]
         open_elections_count = sum(1 for e in elections if e["badge"] == "Voting Open")
     finally:
         conn.close()
@@ -95,13 +104,17 @@ def student_dashboard(user: dict = Depends(require_student)):
         "student_id": user.get("student_id", ""),
         "total_elections": total_elections,
         "open_elections_count": open_elections_count,
+        "active_elections": open_elections_count,
         "applications_count": apps_count,
         "my_applications_count": apps_count,
         "votes_cast": votes_cast,
         "my_votes_count": votes_cast,
+        "registered_votes": votes_cast,
         "approved_applications": approved,
         "approved_candidacies_count": approved,
+        "approved_candidates": approved,
         "elections": elections,
+        "participation_history": participation_history,
     }
 
 
@@ -116,14 +129,15 @@ def get_student_elections(user: dict = Depends(require_student)):
 
 
 # ---------------------------------------------------------------------------
-# Candidates for an election
+# Candidates for an election (returns both dict with metadata and candidates list)
 # ---------------------------------------------------------------------------
 @router.get("/elections/{election_id}/candidates")
 def get_candidates(election_id: int, user: dict = Depends(require_student)):
     conn = get_connection()
     try:
         election = conn.execute(
-            "SELECT id FROM elections WHERE id = ?", (election_id,)
+            "SELECT id, name, start_time, end_time, status, results_declared FROM elections WHERE id = ?",
+            (election_id,),
         ).fetchone()
         if not election:
             raise HTTPException(status_code=404, detail="Election not found.")
@@ -135,7 +149,56 @@ def get_candidates(election_id: int, user: dict = Depends(require_student)):
         candidates = [dict(r) for r in rows]
     finally:
         conn.close()
-    return candidates
+
+    return {
+        "election_id": election["id"],
+        "election_name": election["name"],
+        "start_time": election["start_time"],
+        "end_time": election["end_time"],
+        "status": election["status"],
+        "candidates": candidates,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Declared Results for Student View
+# ---------------------------------------------------------------------------
+@router.get("/results/{election_id}")
+def get_student_results(election_id: int, user: dict = Depends(require_student)):
+    conn = get_connection()
+    try:
+        election = conn.execute(
+            "SELECT id, name, results_declared FROM elections WHERE id = ?",
+            (election_id,),
+        ).fetchone()
+        if not election:
+            raise HTTPException(status_code=404, detail="Election not found.")
+        if not election["results_declared"]:
+            raise HTTPException(status_code=400, detail="Results have not been declared yet.")
+
+        rows = conn.execute(
+            "SELECT c.id AS candidate_id, c.name AS candidate_name, c.department, "
+            "COUNT(v.id) AS vote_count "
+            "FROM candidates c "
+            "LEFT JOIN votes v ON c.id = v.candidate_id AND v.election_id = c.election_id "
+            "WHERE c.election_id = ? "
+            "GROUP BY c.id "
+            "ORDER BY vote_count DESC",
+            (election_id,),
+        ).fetchall()
+
+        results = [dict(r) for r in rows]
+        total_votes = sum(r["vote_count"] for r in results)
+        winner = results[0] if (results and results[0]["vote_count"] > 0) else None
+    finally:
+        conn.close()
+
+    return {
+        "election_name": election["name"],
+        "total_votes": total_votes,
+        "winner": winner,
+        "results": results,
+    }
 
 
 # ---------------------------------------------------------------------------

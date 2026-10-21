@@ -222,6 +222,25 @@
                                 <option value="2">Department Representative Election 2026</option>
                                 <option value="3">Cultural & Sports Committee Elections 2026</option>
                             </select>
+
+                            <!-- Election Schedule Details Card -->
+                            <div id="nomination-election-schedule" class="card" style="margin-top: 12px; padding: 16px; background: var(--bg-tertiary); border: 1px solid var(--border-accent); display: none;">
+                                <div style="font-weight: 700; color: var(--accent-light); margin-bottom: 8px; font-size: 0.95rem;" id="nomination-election-name">—</div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Start Date & Time</div>
+                                        <div id="nomination-start-date" style="font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin-top: 2px;">—</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">End Date & Time</div>
+                                        <div id="nomination-end-date" style="font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin-top: 2px;">—</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Election Status</div>
+                                        <div id="nomination-status-badge" style="margin-top: 4px;"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-group">
@@ -353,6 +372,53 @@
             </section>
 
         </main>
+    </div>
+
+    <!-- Results Modal for Students -->
+    <div id="modal-student-results" class="modal-overlay">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Official Election Results" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="student-results-title">Election Results</h3>
+                <button type="button" class="modal-close" id="btn-close-results-modal" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- Winner Banner -->
+                <div id="student-results-winner-banner" class="card" style="margin-bottom: 20px; padding: 18px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(16, 185, 129, 0.2)); border: 2px solid var(--accent); display: none;">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div style="font-size: 2.4rem;">👑</div>
+                        <div>
+                            <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--accent-light);">OFFICIAL WINNER DECLARED</div>
+                            <div id="student-results-winner-name" style="font-size: 1.3rem; font-weight: 800; color: var(--text-white); margin: 3px 0;">—</div>
+                            <div id="student-results-winner-meta" style="font-size: 0.85rem; color: var(--text-secondary);">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="student-results-meta" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Total votes cast: 0</div>
+
+                <!-- Results Bars -->
+                <div id="student-results-chart" style="margin-bottom: 20px;"></div>
+
+                <!-- Table Breakdown -->
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Candidate</th>
+                                <th>Department</th>
+                                <th>Votes</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-results-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="btn-done-results-modal">Close</button>
+            </div>
+        </div>
     </div>
 
     <!-- JavaScript module -->
