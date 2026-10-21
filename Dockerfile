@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install dependencies needed at runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tzdata \
+    tzdata libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create dedicated non-root application user
