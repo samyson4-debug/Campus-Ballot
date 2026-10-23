@@ -260,8 +260,54 @@ def _migrate_postgres(conn) -> None:
             conn.rollback()
             logger.warning("Postgres index migration note (%s): %s", sql, e)
 
-    # 5. Backfill candidate posts
+    # 5. Sync candidate posts from approved candidate applications & defaults
+    _sync_candidate_posts_from_applications(conn)
+
+    logger.info("PostgreSQL migrations completed successfully.")
+
+
+def _sync_candidate_posts_from_applications(conn) -> None:
+    """
+    Sync candidate positions from approved candidate_applications.
+    Ensures candidates nominated by students (e.g. Dancing committe nominees)
+    reflect the actual post they applied for (President, Vice President, Secretary, etc.),
+    rather than a generic default, and syncs votes.post to match.
+    """
     try:
+        approved_apps = conn.execute("""
+            SELECT ca.id, ca.election_id, ca.post, ca.department, s.full_name
+            FROM candidate_applications ca
+            JOIN students s ON ca.student_id = s.id
+            WHERE ca.status = 'Approved' AND ca.post IS NOT NULL AND ca.post != ''
+            ORDER BY ca.id ASC
+        """).fetchall()
+
+        apps_by_cand = {}
+        for app in approved_apps:
+            key = (app["election_id"], app["full_name"])
+            if key not in apps_by_cand:
+                apps_by_cand[key] = []
+            apps_by_cand[key].append(app)
+
+        for (eid, name), app_list in apps_by_cand.items():
+            cands = conn.execute(
+                "SELECT id, post, department FROM candidates WHERE election_id = ? AND name = ? ORDER BY id ASC",
+                (eid, name),
+            ).fetchall()
+
+            for i, app in enumerate(app_list):
+                if i < len(cands):
+                    conn.execute(
+                        "UPDATE candidates SET post = ?, department = COALESCE(?, department) WHERE id = ?",
+                        (app["post"], app["department"], cands[i]["id"]),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO candidates (election_id, name, department, post) VALUES (?, ?, ?, ?)",
+                        (eid, name, app["department"], app["post"]),
+                    )
+
+        # Sync known sample candidate posts
         post_defaults = {
             "Alex Rivera": "President",
             "Jordan Lee": "President",
@@ -276,19 +322,16 @@ def _migrate_postgres(conn) -> None:
         }
         for name, default_post in post_defaults.items():
             conn.execute(
-                "UPDATE candidates SET post = ? WHERE name = ? AND (post IS NULL OR post = '')",
+                "UPDATE candidates SET post = ? WHERE name = ? AND (post IS NULL OR post = '' OR post = 'General')",
                 (default_post, name),
             )
+
+        # Any candidate remaining with empty or null post gets a sensible default
         conn.execute(
             "UPDATE candidates SET post = 'President' WHERE post IS NULL OR post = ''"
         )
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.warning("Backfilling candidate posts error: %s", e)
 
-    # 6. Counterpart candidates for election 1
-    try:
+        # Counterpart candidates for election 1 (Student Council General Elections 2026)
         row_e1 = conn.execute("SELECT id FROM elections WHERE id = 1").fetchone()
         if row_e1:
             e1_cands = {r["name"] for r in conn.execute("SELECT name FROM candidates WHERE election_id = 1").fetchall()}
@@ -303,24 +346,19 @@ def _migrate_postgres(conn) -> None:
                         "INSERT INTO candidates (election_id, name, department, post) VALUES (1, ?, ?, ?)",
                         (name, dept, post),
                     )
-            conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.warning("Counterpart candidates for election 1 error: %s", e)
 
-    # 7. Sync vote post from candidate if vote post is empty
-    try:
+        # Sync votes.post from candidates table
         conn.execute("""
             UPDATE votes
             SET post = (SELECT COALESCE(c.post, '') FROM candidates c WHERE c.id = votes.candidate_id)
-            WHERE post = '' OR post IS NULL
+            WHERE candidate_id IS NOT NULL
         """)
+
         conn.commit()
+        logger.info("Candidate posts successfully synchronized from applications and defaults.")
     except Exception as e:
         conn.rollback()
-        logger.warning("Sync vote posts error: %s", e)
-
-    logger.info("PostgreSQL migrations completed successfully.")
+        logger.warning("Candidate post synchronization note: %s", e)
 
 
 def _migrate(conn) -> None:
@@ -384,50 +422,8 @@ def _migrate(conn) -> None:
     else:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_votes_election_post ON votes(election_id, post)")
 
-    # 4. Backfill default posts for candidates if empty
-    post_defaults = {
-        "Alex Rivera": "President",
-        "Jordan Lee": "President",
-        "Samantha Chen": "Vice President",
-        "Rahul Patel": "Vice President",
-        "Marcus Johnson": "Secretary",
-        "Elena Gomez": "Secretary",
-        "Priya Sharma": "Class Representative",
-        "Liam Davies": "Class Representative",
-        "Aisha Khan": "Cultural Secretary",
-        "Lucas Martin": "Sports Secretary",
-    }
-    for name, default_post in post_defaults.items():
-        conn.execute(
-            "UPDATE candidates SET post = ? WHERE name = ? AND (post IS NULL OR post = '')",
-            (default_post, name),
-        )
-    conn.execute(
-        "UPDATE candidates SET post = 'President' WHERE post IS NULL OR post = ''"
-    )
-
-    # 5. For existing seeded election 1, add counterpart candidates if not present so each post has options
-    row_e1 = conn.execute("SELECT id FROM elections WHERE id = 1").fetchone()
-    if row_e1:
-        e1_cands = {r["name"] for r in conn.execute("SELECT name FROM candidates WHERE election_id = 1").fetchall()}
-        needed = [
-            ("Jordan Lee", "Mechanical Engineering", "President"),
-            ("Rahul Patel", "Civil Engineering", "Vice President"),
-            ("Elena Gomez", "Information Technology", "Secretary"),
-        ]
-        for name, dept, post in needed:
-            if name not in e1_cands:
-                conn.execute(
-                    "INSERT INTO candidates (election_id, name, department, post) VALUES (1, ?, ?, ?)",
-                    (name, dept, post),
-                )
-    # Sync vote post from candidate if vote post is empty
-    conn.execute("""
-        UPDATE votes
-        SET post = (SELECT COALESCE(c.post, '') FROM candidates c WHERE c.id = votes.candidate_id)
-        WHERE post = '' OR post IS NULL
-    """)
-    conn.commit()
+    # 4. Sync candidate posts from approved candidate applications & defaults
+    _sync_candidate_posts_from_applications(conn)
 
 
 def _bootstrap_admin(conn: sqlite3.Connection) -> None:

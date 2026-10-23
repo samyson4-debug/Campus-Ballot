@@ -523,7 +523,7 @@ async function fetchApplications() {
 
             tr.innerHTML = `
                 <td>#${app.id}</td>
-                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(app.full_name)}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(app.full_name)} <span class="cand-badge-post">🏷️ ${escapeHtml(app.post)}</span></td>
                 <td><code>${escapeHtml(app.student_id)}</code></td>
                 <td>${escapeHtml(app.election_name || 'Election #' + app.election_id)}</td>
                 <td><strong>${escapeHtml(app.post)}</strong></td>
@@ -719,6 +719,7 @@ async function renderElectionResults(electionId) {
                 barBox.innerHTML = `
                     <div class="result-bar-label">
                         <span class="result-bar-name">${isWinner ? '👑 ' : ''}${escapeHtml(item.candidate_name)}
+                            <span class="cand-badge-post" style="margin-left:6px;">🏷️ ${escapeHtml(item.post || post)}</span>
                             <span class="cand-badge-branch" style="margin-left:6px;">🎓 ${escapeHtml(item.department || 'N/A')}</span>
                         </span>
                         <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
@@ -738,7 +739,7 @@ async function renderElectionResults(electionId) {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td style="font-weight: 700;">#${rank++}</td>
-                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)} <span class="cand-badge-post">🏷️ ${escapeHtml(item.post || 'General')}</span></td>
                 <td><span class="cand-badge-post">${escapeHtml(item.post || 'General')}</span></td>
                 <td>${escapeHtml(item.department || '—')}</td>
                 <td style="font-weight: 700; color: var(--accent-light);">${item.vote_count}</td>

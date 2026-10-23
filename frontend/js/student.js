@@ -150,16 +150,22 @@ async function loadDashboard() {
                 const cands = el.candidates || [];
                 const postGroups = {};
                 cands.forEach(c => {
-                    const p = (c.post || 'General').trim();
+                    const p = (c.post || 'President').trim();
                     if (!postGroups[p]) postGroups[p] = [];
                     postGroups[p].push(c);
                 });
                 const postGroupHtml = Object.entries(postGroups).map(([post, cs]) =>
-                    `<div style="margin-bottom:8px;">
-                        <div class="cand-badge-post" style="margin-bottom:6px;">🏷️ ${escapeHtml(post)}</div>
+                    `<div style="margin-bottom:12px; background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                            <span class="cand-badge-post" style="font-weight:700; font-size:0.82rem;">🏛️ Post: ${escapeHtml(post)}</span>
+                            <span style="font-size:0.75rem; color:var(--text-muted);">${cs.length} Nominee${cs.length !== 1 ? 's' : ''}</span>
+                        </div>
                         <div class="election-candidates-preview">${cs.map(c =>
                             `<div class="election-candidate-chip">
-                                <span class="chip-name">${escapeHtml(c.name)}</span>
+                                <span class="chip-name" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:600; color:var(--text-white);">${escapeHtml(c.name)}</span>
+                                    <span class="cand-badge-post" style="font-size:0.72rem; padding:2px 6px;">🏷️ ${escapeHtml(c.post || post)}</span>
+                                </span>
                                 <span class="cand-badge-branch">🎓 ${escapeHtml(c.department || 'N/A')}</span>
                             </div>`).join('')}
                         </div>
@@ -425,28 +431,47 @@ async function loadBallot(electionId) {
             header.className = 'ballot-post-header';
             header.innerHTML = `
                 <div class="ballot-post-title">
-                    <span class="cand-badge-post">🏷️ ${escapeHtml(post)}</span>
+                    <span style="font-size: 1.25rem;">🏛️</span>
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span style="font-size: 1.05rem; font-weight: 800; color: #fff;">${escapeHtml(post)}</span>
+                            <span class="cand-badge-post">Position: ${escapeHtml(post)}</span>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 500; margin-top: 2px;">
+                            ${postGroups[post].length} nominee${postGroups[post].length !== 1 ? 's' : ''} for the post of ${escapeHtml(post)}
+                        </div>
+                    </div>
                 </div>
-                ${isVoted ? '<span class="ballot-voted-notice">✓ Voted</span>' : ''}
+                <div>
+                    ${isVoted
+                        ? '<span class="ballot-voted-notice">✓ Vote Recorded</span>'
+                        : '<span class="ballot-vote-instruction">Vote for 1 nominee</span>'}
+                </div>
             `;
             section.appendChild(header);
 
             if (isVoted) {
-                const notice = document.createElement('p');
-                notice.className = 'form-help';
-                notice.style.color = 'var(--text-muted)';
-                notice.textContent = 'You have already cast your vote for this post.';
+                const notice = document.createElement('div');
+                notice.style.padding = '14px 18px';
+                notice.style.color = '#34d399';
+                notice.style.fontSize = '0.9rem';
+                notice.style.display = 'flex';
+                notice.style.alignItems = 'center';
+                notice.style.gap = '8px';
+                notice.innerHTML = `<span>✓</span> You have already cast your official vote for the post of <strong>${escapeHtml(post)}</strong>.`;
                 section.appendChild(notice);
             } else {
                 const radioList = document.createElement('div');
                 radioList.className = 'radio-list';
                 radioList.style.marginTop = '0';
+                radioList.style.padding = '14px 18px';
 
                 postGroups[post].forEach((cand) => {
                     const label = document.createElement('label');
                     label.className = 'radio-item';
                     const candName = cand.name || `Candidate #${cand.id}`;
                     const candDept = cand.department || 'N/A';
+                    const candPost = cand.post || post;
 
                     label.innerHTML = `
                         <input
@@ -454,11 +479,14 @@ async function loadBallot(electionId) {
                             name="candidate_post_${CSS.escape(post)}"
                             value="${cand.id}"
                             data-name="${escapeHtml(candName)}"
-                            data-post="${escapeHtml(post)}"
+                            data-post="${escapeHtml(candPost)}"
                         >
-                        <div class="radio-item-info">
-                            <div class="radio-item-name">${escapeHtml(candName)}</div>
-                            <div class="radio-item-dept">
+                        <div class="radio-item-info" style="width: 100%;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-weight: 700; font-size: 1rem; color: var(--text-white);">${escapeHtml(candName)}</span>
+                                    <span class="cand-badge-post">🏷️ ${escapeHtml(candPost)}</span>
+                                </div>
                                 <span class="cand-badge-branch">🎓 ${escapeHtml(candDept)}</span>
                             </div>
                         </div>
@@ -864,6 +892,7 @@ async function showStudentResultsModal(electionId) {
                 barBox.innerHTML = `
                     <div class="result-bar-label">
                         <span class="result-bar-name">${isWinner ? '👑 ' : ''}${escapeHtml(item.candidate_name)}
+                            <span class="cand-badge-post" style="margin-left:6px;">🏷️ ${escapeHtml(item.post || post)}</span>
                             <span class="cand-badge-branch" style="margin-left:6px;">🎓 ${escapeHtml(item.department || 'N/A')}</span>
                         </span>
                         <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
@@ -882,7 +911,7 @@ async function showStudentResultsModal(electionId) {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td style="font-weight: 700;">#${rank++}</td>
-                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)} <span class="cand-badge-post">🏷️ ${escapeHtml(item.post || 'General')}</span></td>
                 <td><span class="cand-badge-post">${escapeHtml(item.post || 'General')}</span></td>
                 <td>${escapeHtml(item.department || '—')}</td>
                 <td style="font-weight: 700; color: var(--accent-light);">${item.vote_count}</td>
