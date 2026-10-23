@@ -30,13 +30,27 @@ class VoteError(Exception):
         self.code = code
 
 
-def save_vote(election_id: int, student_id: int, candidate_id: int) -> None:
+def save_vote(election_id: int, student_id: int, candidate_id: int) -> list[str]:
     """
-    Atomically record a vote.
+    Atomically record a vote for a single candidate.
+    Maintains full backward compatibility.
+    """
+    return save_votes(election_id, student_id, [candidate_id])
+
+
+def save_votes(election_id: int, student_id: int, candidate_ids: list[int]) -> list[str]:
+    """
+    Atomically record one or more votes across different posts for a student.
 
     Raises ``VoteError`` with one of these codes on failure:
     NOT_STARTED, CLOSED, ALREADY_VOTED, INVALID_CANDIDATE, RESULTS_DECLARED
     """
+    if not candidate_ids:
+        raise VoteError("No candidates selected to vote for.", "INVALID_CANDIDATE")
+
+    # Remove duplicates if any
+    unique_candidate_ids = list(dict.fromkeys(candidate_ids))
+
     tz = ZoneInfo(settings.APP_TIMEZONE)
     now_str = datetime.now(tz).strftime(DATE_FORMAT)
 
@@ -73,37 +87,67 @@ def save_vote(election_id: int, student_id: int, candidate_id: int) -> None:
             conn.rollback()
             raise VoteError("Voting is closed.", "CLOSED")
 
-        # 4. Has this student already voted in this election?
-        existing = conn.execute(
-            "SELECT id FROM votes WHERE election_id = ? AND student_id = ?",
-            (election_id, student_id),
-        ).fetchone()
-        if existing:
-            conn.rollback()
-            raise VoteError("You have already voted in this election.", "ALREADY_VOTED")
+        # 4. Fetch and validate each candidate belongs to this election
+        placeholders = ",".join("?" for _ in unique_candidate_ids)
+        rows = conn.execute(
+            f"SELECT id, name, department, post FROM candidates "
+            f"WHERE election_id = ? AND id IN ({placeholders})",
+            [election_id] + unique_candidate_ids,
+        ).fetchall()
 
-        # 5. Does the candidate belong to this election?
-        candidate = conn.execute(
-            "SELECT id FROM candidates WHERE id = ? AND election_id = ?",
-            (candidate_id, election_id),
-        ).fetchone()
-        if not candidate:
-            conn.rollback()
-            raise VoteError("Invalid candidate for this election.", "INVALID_CANDIDATE")
+        cand_map = {r["id"]: dict(r) for r in rows}
+        for cid in unique_candidate_ids:
+            if cid not in cand_map:
+                conn.rollback()
+                raise VoteError(f"Invalid candidate #{cid} for this election.", "INVALID_CANDIDATE")
 
-        # 6. INSERT the vote.
-        try:
-            conn.execute(
-                "INSERT INTO votes (election_id, student_id, candidate_id, voted_at) "
-                "VALUES (?, ?, ?, ?)",
-                (election_id, student_id, candidate_id, now_str),
-            )
-        except sqlite3.IntegrityError:
-            # UNIQUE(election_id, student_id) — second safety net.
-            conn.rollback()
-            raise VoteError("You have already voted in this election.", "ALREADY_VOTED")
+        # 5. Check duplicate posts in current submission batch
+        seen_posts = set()
+        posts_to_vote = []
+        for cid in unique_candidate_ids:
+            c = cand_map[cid]
+            raw_post = c.get("post")
+            post = (raw_post or "").strip()
+            if post in seen_posts:
+                post_label = f"the post of {post}" if post else "this election"
+                conn.rollback()
+                raise VoteError(f"Cannot cast multiple votes for {post_label} at the same time.", "ALREADY_VOTED")
+            seen_posts.add(post)
+            posts_to_vote.append((cid, post))
 
-        # 7. COMMIT — the vote is now durable.
+        # 6. Check if student already voted for ANY of these posts
+        for cid, post in posts_to_vote:
+            if post:
+                existing = conn.execute(
+                    "SELECT id FROM votes WHERE election_id = ? AND student_id = ? AND post = ?",
+                    (election_id, student_id, post),
+                ).fetchone()
+            else:
+                existing = conn.execute(
+                    "SELECT id FROM votes WHERE election_id = ? AND student_id = ? AND (post = '' OR post IS NULL)",
+                    (election_id, student_id),
+                ).fetchone()
+
+            if existing:
+                conn.rollback()
+                post_label = f" for the post of {post}" if post else ""
+                raise VoteError(f"You have already voted{post_label} in this election.", "ALREADY_VOTED")
+
+        # 7. INSERT the votes
+        for cid, post in posts_to_vote:
+            try:
+                conn.execute(
+                    "INSERT INTO votes (election_id, student_id, candidate_id, post, voted_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (election_id, student_id, cid, post, now_str),
+                )
+            except sqlite3.IntegrityError:
+                # UNIQUE(election_id, student_id, post) — safety net.
+                conn.rollback()
+                post_label = f" for the post of {post}" if post else ""
+                raise VoteError(f"You have already voted{post_label} in this election.", "ALREADY_VOTED")
+
+        # 8. COMMIT — all votes are now durable.
         conn.commit()
 
     except VoteError:
@@ -114,13 +158,15 @@ def save_vote(election_id: int, student_id: int, candidate_id: int) -> None:
     finally:
         conn.close()
 
-    # 8. Audit AFTER the commit.
-    # PRIVACY: we log that a vote was cast but NEVER which candidate.
+    # 9. Audit AFTER the commit.
+    # PRIVACY: we log that votes were cast for the posts, NEVER which candidate.
     from ..services.audit import write_audit
 
+    posts_desc = ", ".join(p if p else "General" for _, p in posts_to_vote)
     write_audit(
         action="vote_cast",
         actor_type="student",
         actor_id=str(student_id),
-        details=f"Voted in election {election_id}",
+        details=f"Voted in election {election_id} for: {posts_desc}",
     )
+    return [p for _, p in posts_to_vote]

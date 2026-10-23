@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS candidates (
     id            SERIAL PRIMARY KEY,
     election_id   INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
     name          TEXT    NOT NULL,
-    department    TEXT
+    department    TEXT,
+    post          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS candidate_applications (
@@ -164,8 +165,9 @@ CREATE TABLE IF NOT EXISTS votes (
     election_id   INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
     student_id    INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     candidate_id  INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+    post          TEXT    NOT NULL DEFAULT '',
     voted_at      TEXT,
-    UNIQUE(election_id, student_id)
+    UNIQUE(election_id, student_id, post)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

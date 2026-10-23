@@ -322,10 +322,10 @@ def approve_application(app_id: int, user: dict = Depends(require_admin)):
             "UPDATE candidate_applications SET status = 'Approved' WHERE id = ?",
             (app_id,),
         )
-        # Insert into candidates table.
+        # Insert into candidates table with post.
         conn.execute(
-            "INSERT INTO candidates (election_id, name, department) VALUES (?, ?, ?)",
-            (app_row["election_id"], app_row["full_name"], app_row["department"]),
+            "INSERT INTO candidates (election_id, name, department, post) VALUES (?, ?, ?, ?)",
+            (app_row["election_id"], app_row["full_name"], app_row["department"], app_row["post"]),
         )
         conn.commit()
     except HTTPException:
@@ -433,19 +433,26 @@ def get_results(election_id: int, user: dict = Depends(require_admin)):
 
         # LEFT JOIN so candidates with zero votes still appear.
         rows = conn.execute(
-            "SELECT c.id AS candidate_id, c.name AS candidate_name, c.department, "
+            "SELECT c.id AS candidate_id, c.name AS candidate_name, c.department, c.post, "
             "COUNT(v.id) AS vote_count "
             "FROM candidates c "
             "LEFT JOIN votes v ON c.id = v.candidate_id AND v.election_id = c.election_id "
             "WHERE c.election_id = ? "
             "GROUP BY c.id "
-            "ORDER BY vote_count DESC",
+            "ORDER BY c.post, vote_count DESC",
             (election_id,),
         ).fetchall()
 
         results = [dict(r) for r in rows]
         total_votes = sum(r["vote_count"] for r in results)
         winner = results[0] if (results and results[0]["vote_count"] > 0) else None
+
+        # Post-level winners
+        post_winners = {}
+        for r in results:
+            p = r.get("post") or "General"
+            if p not in post_winners and r["vote_count"] > 0:
+                post_winners[p] = r
     finally:
         conn.close()
 
@@ -453,6 +460,7 @@ def get_results(election_id: int, user: dict = Depends(require_admin)):
         "election_name": election["name"],
         "total_votes": total_votes,
         "winner": winner,
+        "post_winners": post_winners,
         "results": results,
     }
 

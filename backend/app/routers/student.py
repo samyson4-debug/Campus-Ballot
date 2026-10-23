@@ -14,7 +14,7 @@ from ..deps import require_student
 from ..schemas import CandidateApplicationRequest, VoteRequest
 from ..services.audit import write_audit
 from ..services.elections import get_election_state
-from ..services.voting import VoteError, save_vote
+from ..services.voting import VoteError, save_vote, save_votes
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 
@@ -50,29 +50,33 @@ def student_dashboard(user: dict = Depends(require_student)):
         for r in rows:
             state = get_election_state(r["start_time"], r["end_time"], r["status"])
 
-            # Has this student voted?
-            voted = conn.execute(
-                "SELECT id FROM votes WHERE election_id = ? AND student_id = ?",
+            # Candidates for this election with post
+            candidates = conn.execute(
+                "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
+                (r["id"],),
+            ).fetchall()
+
+            # Student votes in this election
+            voted_rows = conn.execute(
+                "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
                 (r["id"], user["id"]),
-            ).fetchone()
+            ).fetchall()
+            voted_posts = [v["post"] for v in voted_rows]
+            cand_posts = {(c["post"] or "").strip() for c in candidates if (c["post"] or "").strip()}
+            fully_voted = bool(cand_posts and cand_posts.issubset(set(voted_posts)))
+            has_voted = bool(voted_rows)
 
             # Compute badge.
-            if voted:
-                badge = "Vote Submitted"
-            elif r["results_declared"]:
+            if r["results_declared"]:
                 badge = "Results Available"
+            elif fully_voted:
+                badge = "Vote Submitted"
             elif state == "OPEN":
                 badge = "Voting Open"
             elif state == "NOT_STARTED":
                 badge = "Upcoming"
             else:
                 badge = "Closed"
-
-            # Candidates for this election.
-            candidates = conn.execute(
-                "SELECT id, name, department FROM candidates WHERE election_id = ?",
-                (r["id"],),
-            ).fetchall()
 
             elections.append({
                 "id": r["id"],
@@ -83,15 +87,18 @@ def student_dashboard(user: dict = Depends(require_student)):
                 "results_declared": bool(r["results_declared"]),
                 "state": state,
                 "badge": badge,
-                "has_voted": bool(voted),
+                "has_voted": has_voted,
+                "fully_voted": fully_voted,
+                "voted_posts": voted_posts,
                 "candidates": [dict(c) for c in candidates],
                 "candidate_count": len(candidates),
             })
         history_rows = conn.execute(
-            "SELECT v.id, v.voted_at, e.name AS election_name "
+            "SELECT v.id, v.voted_at, v.post, e.name AS election_name, c.name AS candidate_name "
             "FROM votes v "
             "JOIN elections e ON v.election_id = e.id "
-            "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 5",
+            "LEFT JOIN candidates c ON v.candidate_id = c.id "
+            "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 10",
             (user["id"],),
         ).fetchall()
         participation_history = [dict(h) for h in history_rows]
@@ -143,10 +150,19 @@ def get_candidates(election_id: int, user: dict = Depends(require_student)):
             raise HTTPException(status_code=404, detail="Election not found.")
 
         rows = conn.execute(
-            "SELECT id, name, department FROM candidates WHERE election_id = ?",
+            "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
             (election_id,),
         ).fetchall()
         candidates = [dict(r) for r in rows]
+
+        # Voted posts for this student in this election
+        voted_rows = conn.execute(
+            "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
+            (election_id, user["id"]),
+        ).fetchall()
+        voted_posts = [r["post"] for r in voted_rows]
+        voted_cids = [r["candidate_id"] for r in voted_rows]
+        posts = list(dict.fromkeys([(c.get("post") or "").strip() for c in candidates if (c.get("post") or "").strip()]))
     finally:
         conn.close()
 
@@ -157,6 +173,9 @@ def get_candidates(election_id: int, user: dict = Depends(require_student)):
         "end_time": election["end_time"],
         "status": election["status"],
         "candidates": candidates,
+        "posts": posts,
+        "voted_posts": voted_posts,
+        "voted_candidate_ids": voted_cids,
     }
 
 
@@ -177,19 +196,26 @@ def get_student_results(election_id: int, user: dict = Depends(require_student))
             raise HTTPException(status_code=400, detail="Results have not been declared yet.")
 
         rows = conn.execute(
-            "SELECT c.id AS candidate_id, c.name AS candidate_name, c.department, "
+            "SELECT c.id AS candidate_id, c.name AS candidate_name, c.department, c.post, "
             "COUNT(v.id) AS vote_count "
             "FROM candidates c "
             "LEFT JOIN votes v ON c.id = v.candidate_id AND v.election_id = c.election_id "
             "WHERE c.election_id = ? "
             "GROUP BY c.id "
-            "ORDER BY vote_count DESC",
+            "ORDER BY c.post, vote_count DESC",
             (election_id,),
         ).fetchall()
 
         results = [dict(r) for r in rows]
         total_votes = sum(r["vote_count"] for r in results)
         winner = results[0] if (results and results[0]["vote_count"] > 0) else None
+
+        # Calculate winners per post
+        post_winners = {}
+        for r in results:
+            p = r.get("post") or "General"
+            if p not in post_winners and r["vote_count"] > 0:
+                post_winners[p] = r
     finally:
         conn.close()
 
@@ -197,6 +223,7 @@ def get_student_results(election_id: int, user: dict = Depends(require_student))
         "election_name": election["name"],
         "total_votes": total_votes,
         "winner": winner,
+        "post_winners": post_winners,
         "results": results,
     }
 
@@ -276,7 +303,10 @@ def cast_vote(
     election_id: int, body: VoteRequest, user: dict = Depends(require_student)
 ):
     try:
-        save_vote(election_id, user["id"], body.candidate_id)
+        if body.candidate_ids:
+            posts_voted = save_votes(election_id, user["id"], body.candidate_ids)
+        else:
+            posts_voted = save_vote(election_id, user["id"], body.candidate_id)
     except VoteError as e:
         code_to_status = {
             "NOT_STARTED": 400,
@@ -288,7 +318,10 @@ def cast_vote(
         raise HTTPException(
             status_code=code_to_status.get(e.code, 400), detail=str(e)
         )
-    return {"message": "Your vote has been recorded successfully."}
+    return {
+        "message": "Your vote has been recorded successfully.",
+        "posts_voted": posts_voted,
+    }
 
 
 # ---------------------------------------------------------------------------

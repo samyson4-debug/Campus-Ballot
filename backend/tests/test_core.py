@@ -657,3 +657,81 @@ def test_results_winner_counting():
     assert stu_res["winner"] is not None
     assert stu_res["winner"]["candidate_name"] == "Winner Charlie"
 
+
+# 33. Multi-post voting: separate votes and batch votes for different posts
+def test_multi_post_voting():
+    cookies = _admin_login()
+    tz = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(tz)
+
+    resp = client.post("/api/admin/elections", json={
+        "name": "Multi-Post Council Election",
+        "start_time": (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M"),
+        "end_time": (now + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M"),
+    }, cookies=cookies)
+    eid = resp.json()["id"]
+
+    conn = get_connection()
+    conn.execute("INSERT INTO candidates (election_id, name, department, post) VALUES (?, 'Alice Pres', 'CSE', 'President')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department, post) VALUES (?, 'Bob Pres', 'ECE', 'President')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department, post) VALUES (?, 'Charlie VP', 'ME', 'Vice President')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department, post) VALUES (?, 'Dave VP', 'CE', 'Vice President')", (eid,))
+    conn.execute("INSERT INTO candidates (election_id, name, department, post) VALUES (?, 'Eve Sec', 'IT', 'Secretary')", (eid,))
+    conn.commit()
+
+    c_alice = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Alice Pres'", (eid,)).fetchone()["id"]
+    c_bob = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Bob Pres'", (eid,)).fetchone()["id"]
+    c_charlie = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Charlie VP'", (eid,)).fetchone()["id"]
+    c_dave = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Dave VP'", (eid,)).fetchone()["id"]
+    c_eve = conn.execute("SELECT id FROM candidates WHERE election_id = ? AND name = 'Eve Sec'", (eid,)).fetchone()["id"]
+    conn.close()
+
+    # Turn ON election
+    client.post(f"/api/admin/elections/{eid}/on", cookies=cookies)
+
+    # Student 1 tests separate votes for different posts
+    sid1 = _register_student(username="multipost_voter1")
+    scookies1 = _student_login(sid1)
+
+    # Verify candidates list includes post
+    cands_resp = client.get(f"/api/student/elections/{eid}/candidates", cookies=scookies1).json()
+    assert "candidates" in cands_resp
+    assert any(c["post"] == "President" for c in cands_resp["candidates"])
+    assert any(c["post"] == "Vice President" for c in cands_resp["candidates"])
+
+    # Vote for President
+    v1 = client.post(f"/api/student/elections/{eid}/vote", json={"candidate_id": c_alice}, cookies=scookies1)
+    assert v1.status_code == 200, v1.json()
+
+    # Second vote for President should fail with ALREADY_VOTED
+    v1_dup = client.post(f"/api/student/elections/{eid}/vote", json={"candidate_id": c_bob}, cookies=scookies1)
+    assert v1_dup.status_code == 409
+    assert "already voted" in v1_dup.json()["detail"].lower()
+
+    # Vote for Vice President should succeed!
+    v2 = client.post(f"/api/student/elections/{eid}/vote", json={"candidate_id": c_charlie}, cookies=scookies1)
+    assert v2.status_code == 200, v2.json()
+
+    # Student 2 tests voting for multiple posts at a time (batch vote)
+    sid2 = _register_student(username="multipost_voter2")
+    scookies2 = _student_login(sid2)
+
+    batch_vote = client.post(
+        f"/api/student/elections/{eid}/vote",
+        json={"candidate_ids": [c_bob, c_dave, c_eve]},
+        cookies=scookies2,
+    )
+    assert batch_vote.status_code == 200, batch_vote.json()
+
+    # Turn OFF and declare results
+    client.post(f"/api/admin/elections/{eid}/off", cookies=cookies)
+    client.post(f"/api/admin/elections/{eid}/declare", cookies=cookies)
+
+    # Check results have post_winners and post per candidate
+    res = client.get(f"/api/student/results/{eid}", cookies=scookies1).json()
+    assert "post_winners" in res
+    assert "President" in res["post_winners"]
+    assert "Vice President" in res["post_winners"]
+    assert all("post" in r for r in res["results"])
+
+

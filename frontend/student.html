@@ -127,12 +127,13 @@
                             <thead>
                                 <tr>
                                     <th>Election</th>
+                                    <th>Position / Post</th>
                                     <th>Status</th>
                                     <th>Voted Timestamp</th>
                                 </tr>
                             </thead>
                             <tbody id="dashboard-history-tbody">
-                                <tr><td colspan="3" style="text-align:center;">Loading activity...</td></tr>
+                                <tr><td colspan="4" style="text-align:center;">Loading activity...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -162,7 +163,7 @@
                     <div class="card-header">
                         <div>
                             <h2 class="card-title" id="voting-election-title">Ballot</h2>
-                            <p class="form-help">Select exactly one candidate below to cast your ballot.</p>
+                            <p class="form-help" id="voting-ballot-subtitle">Vote for candidates across available posts (President, Vice President, Secretary, etc.). You can vote for multiple posts at a time or submit separately.</p>
                         </div>
                         <span class="badge badge-open">Voting Open</span>
                     </div>
@@ -359,11 +360,12 @@
                                 <thead>
                                     <tr>
                                         <th>Election</th>
+                                        <th>Position / Post</th>
                                         <th>Voted At</th>
                                     </tr>
                                 </thead>
                                 <tbody id="profile-history-tbody">
-                                    <tr><td colspan="2" style="text-align:center;">Loading...</td></tr>
+                                    <tr><td colspan="3" style="text-align:center;">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -406,7 +408,8 @@
                             <tr>
                                 <th>Rank</th>
                                 <th>Candidate</th>
-                                <th>Department</th>
+                                <th>Position / Post</th>
+                                <th>Branch / Department</th>
                                 <th>Votes</th>
                                 <th>Percentage</th>
                             </tr>

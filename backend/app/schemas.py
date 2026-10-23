@@ -3,7 +3,7 @@ Campus Ballot — Pydantic v2 Schemas
 Request/response models with validation for every endpoint.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +69,14 @@ class CandidateApplicationRequest(BaseModel):
 # Voting
 # ---------------------------------------------------------------------------
 class VoteRequest(BaseModel):
-    candidate_id: int
+    candidate_id: int | None = None
+    candidate_ids: list[int] | None = None
+
+    @model_validator(mode="after")
+    def validate_vote_targets(self):
+        if self.candidate_id is None and not self.candidate_ids:
+            raise ValueError("Either candidate_id or candidate_ids must be provided.")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +105,7 @@ class CandidateOut(BaseModel):
     id: int
     name: str
     department: str | None = None
+    post: str | None = None
 
 
 class ApplicationOut(BaseModel):
@@ -146,4 +154,5 @@ class ResultRow(BaseModel):
     candidate_id: int
     candidate_name: str
     department: str | None = None
+    post: str | None = None
     vote_count: int = 0

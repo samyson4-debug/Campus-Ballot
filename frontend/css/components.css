@@ -1232,3 +1232,147 @@ tbody tr:hover {
     font-size: 0.8rem;
     color: var(--text-muted);
 }
+
+/* ============================================================
+   MULTI-POST BALLOT & CANDIDATE POST STYLING
+   ============================================================ */
+.ballot-post-section {
+    background: rgba(30, 41, 59, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    transition: all var(--transition-normal);
+}
+
+.ballot-post-section:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+.ballot-post-section.already-voted {
+    background: rgba(16, 185, 129, 0.04);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.ballot-post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ballot-post-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-white);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ballot-voted-notice {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #34d399;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cand-badge-post {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(99, 102, 241, 0.18);
+    border: 1px solid rgba(99, 102, 241, 0.45);
+    color: #c7d2fe;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+}
+
+.cand-badge-branch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fde68a;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+}
+
+.election-candidates-preview {
+    margin-top: 10px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.election-candidate-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.election-candidate-chip .chip-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.post-winners-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.post-winner-card {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(16, 185, 129, 0.12));
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.post-winner-card .pw-post {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-light);
+}
+
+.post-winner-card .pw-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-white);
+}
+
+.post-winner-card .pw-meta {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+

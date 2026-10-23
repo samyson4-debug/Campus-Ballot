@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS candidates (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     election_id   INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
     name          TEXT    NOT NULL,
-    department    TEXT
+    department    TEXT,
+    post          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS candidate_applications (
@@ -113,8 +114,9 @@ CREATE TABLE IF NOT EXISTS votes (
     election_id   INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
     student_id    INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     candidate_id  INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+    post          TEXT    NOT NULL DEFAULT '',
     voted_at      TEXT,
-    UNIQUE(election_id, student_id)
+    UNIQUE(election_id, student_id, post)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -137,11 +139,16 @@ CREATE INDEX IF NOT EXISTS idx_applications_election_status
 
 def _migrate(conn) -> None:
     """
-    Idempotent migration: add results_declared to elections if it was
-    created by an older schema version.
+    Idempotent migration:
+    - add results_declared to elections if older schema.
+    - add post to candidates if older schema.
+    - migrate votes table to support per-post voting with UNIQUE(election_id, student_id, post).
+    - backfill candidate posts if missing.
     """
     if is_postgres():
         return
+
+    # 1. results_declared on elections
     cursor = conn.execute("PRAGMA table_info(elections)")
     columns = {row["name"] for row in cursor.fetchall()}
     if "results_declared" not in columns:
@@ -149,6 +156,91 @@ def _migrate(conn) -> None:
             "ALTER TABLE elections ADD COLUMN results_declared INTEGER DEFAULT 0"
         )
         logger.info("Migration: added results_declared column to elections.")
+
+    # 2. post on candidates
+    cursor = conn.execute("PRAGMA table_info(candidates)")
+    c_columns = {row["name"] for row in cursor.fetchall()}
+    if "post" not in c_columns:
+        conn.execute("ALTER TABLE candidates ADD COLUMN post TEXT")
+        logger.info("Migration: added post column to candidates.")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_candidates_election_post ON candidates(election_id, post)")
+
+    # 3. votes table migration for per-post voting
+    cursor = conn.execute("PRAGMA table_info(votes)")
+    v_columns = {row["name"] for row in cursor.fetchall()}
+    if "post" not in v_columns:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS votes_new (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                election_id   INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+                student_id    INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                candidate_id  INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                post          TEXT    NOT NULL DEFAULT '',
+                voted_at      TEXT,
+                UNIQUE(election_id, student_id, post)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO votes_new (id, election_id, student_id, candidate_id, post, voted_at)
+            SELECT v.id, v.election_id, v.student_id, v.candidate_id, COALESCE(c.post, ''), v.voted_at
+            FROM votes v
+            LEFT JOIN candidates c ON v.candidate_id = c.id
+        """)
+        conn.execute("DROP TABLE votes")
+        conn.execute("ALTER TABLE votes_new RENAME TO votes")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_votes_election ON votes(election_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_votes_student ON votes(student_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_votes_election_post ON votes(election_id, post)")
+        conn.execute("PRAGMA foreign_keys=ON")
+        logger.info("Migration: migrated votes table to support per-post voting.")
+    else:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_votes_election_post ON votes(election_id, post)")
+
+    # 4. Backfill default posts for candidates if empty
+    post_defaults = {
+        "Alex Rivera": "President",
+        "Jordan Lee": "President",
+        "Samantha Chen": "Vice President",
+        "Rahul Patel": "Vice President",
+        "Marcus Johnson": "Secretary",
+        "Elena Gomez": "Secretary",
+        "Priya Sharma": "Class Representative",
+        "Liam Davies": "Class Representative",
+        "Aisha Khan": "Cultural Secretary",
+        "Lucas Martin": "Sports Secretary",
+    }
+    for name, default_post in post_defaults.items():
+        conn.execute(
+            "UPDATE candidates SET post = ? WHERE name = ? AND (post IS NULL OR post = '')",
+            (default_post, name),
+        )
+    conn.execute(
+        "UPDATE candidates SET post = 'President' WHERE post IS NULL OR post = ''"
+    )
+
+    # 5. For existing seeded election 1, add counterpart candidates if not present so each post has options
+    row_e1 = conn.execute("SELECT id FROM elections WHERE id = 1").fetchone()
+    if row_e1:
+        e1_cands = {r["name"] for r in conn.execute("SELECT name FROM candidates WHERE election_id = 1").fetchall()}
+        needed = [
+            ("Jordan Lee", "Mechanical Engineering", "President"),
+            ("Rahul Patel", "Civil Engineering", "Vice President"),
+            ("Elena Gomez", "Information Technology", "Secretary"),
+        ]
+        for name, dept, post in needed:
+            if name not in e1_cands:
+                conn.execute(
+                    "INSERT INTO candidates (election_id, name, department, post) VALUES (1, ?, ?, ?)",
+                    (name, dept, post),
+                )
+    # Sync vote post from candidate if vote post is empty
+    conn.execute("""
+        UPDATE votes
+        SET post = (SELECT COALESCE(c.post, '') FROM candidates c WHERE c.id = votes.candidate_id)
+        WHERE post = '' OR post IS NULL
+    """)
+    conn.commit()
 
 
 def _bootstrap_admin(conn: sqlite3.Connection) -> None:
@@ -210,14 +302,17 @@ def _seed_default_elections(conn: sqlite3.Connection) -> None:
     eid_1 = cursor.lastrowid
 
     sample_candidates_1 = [
-        ("Alex Rivera", "Computer Science"),
-        ("Samantha Chen", "Electrical Engineering"),
-        ("Marcus Johnson", "Business Administration"),
+        ("Alex Rivera", "Computer Science", "President"),
+        ("Jordan Lee", "Mechanical Engineering", "President"),
+        ("Samantha Chen", "Electrical Engineering", "Vice President"),
+        ("Rahul Patel", "Civil Engineering", "Vice President"),
+        ("Marcus Johnson", "Business Administration", "Secretary"),
+        ("Elena Gomez", "Information Technology", "Secretary"),
     ]
-    for name, dept in sample_candidates_1:
+    for name, dept, post in sample_candidates_1:
         conn.execute(
-            "INSERT INTO candidates (election_id, name, department) VALUES (?, ?, ?)",
-            (eid_1, name, dept),
+            "INSERT INTO candidates (election_id, name, department, post) VALUES (?, ?, ?, ?)",
+            (eid_1, name, dept, post),
         )
 
     # 2. Department Representative Election (Open for voting & nominations)
@@ -231,13 +326,15 @@ def _seed_default_elections(conn: sqlite3.Connection) -> None:
     eid_2 = cursor.lastrowid
 
     sample_candidates_2 = [
-        ("Priya Sharma", "Information Technology"),
-        ("Liam Davies", "Mechanical Engineering"),
+        ("Priya Sharma", "Information Technology", "Class Representative"),
+        ("Liam Davies", "Mechanical Engineering", "Class Representative"),
+        ("Aisha Khan", "Computer Science", "Cultural Secretary"),
+        ("Lucas Martin", "Physical Education", "Sports Secretary"),
     ]
-    for name, dept in sample_candidates_2:
+    for name, dept, post in sample_candidates_2:
         conn.execute(
-            "INSERT INTO candidates (election_id, name, department) VALUES (?, ?, ?)",
-            (eid_2, name, dept),
+            "INSERT INTO candidates (election_id, name, department, post) VALUES (?, ?, ?, ?)",
+            (eid_2, name, dept, post),
         )
 
     # 3. Cultural & Sports Committee Elections (Upcoming)
