@@ -188,11 +188,25 @@ def cmd_backup():
         dest.close()
 
 
+def cmd_migrate():
+    """Run database initialization and migrations."""
+    print("=" * 60)
+    print("  CAMPUS BALLOT — DATABASE MIGRATION")
+    print("=" * 60)
+    try:
+        create_database()
+        print("\n[SUCCESS] All schema migrations and bootstrap routines completed!")
+    except Exception as e:
+        print(f"\n[ERROR] Migration failed: {e}")
+        sys.exit(1)
+
+
 def main():
     if len(sys.argv) < 2:
         cmd_test()
         print("\nAvailable commands:")
         print("  python db_cli.py test     — Test connection & health")
+        print("  python db_cli.py migrate  — Run schema migrations")
         print("  python db_cli.py tables   — Show tables & counts")
         print("  python db_cli.py logins   — View login events")
         print("  python db_cli.py events   — View all election events")
@@ -202,6 +216,8 @@ def main():
     cmd = sys.argv[1].lower()
     if cmd == "test":
         cmd_test()
+    elif cmd == "migrate":
+        cmd_migrate()
     elif cmd == "tables":
         cmd_tables()
     elif cmd == "logins":
@@ -214,7 +230,7 @@ def main():
         cmd_backup()
     else:
         print(f"Unknown command: {cmd}")
-        print("Usage: python db_cli.py [test|tables|logins|events|backup]")
+        print("Usage: python db_cli.py [test|migrate|tables|logins|events|backup]")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,13 @@ from ..services.elections import get_election_state, STATE_OPEN
 
 logger = logging.getLogger("campus_ballot")
 
+try:
+    import psycopg2
+    PG_INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+except ImportError:
+    PG_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+
+
 
 class VoteError(Exception):
     """Raised when a vote cannot be cast.  ``code`` is a machine-readable tag."""
@@ -141,7 +148,7 @@ def save_votes(election_id: int, student_id: int, candidate_ids: list[int]) -> l
                     "VALUES (?, ?, ?, ?, ?)",
                     (election_id, student_id, cid, post, now_str),
                 )
-            except sqlite3.IntegrityError:
+            except PG_INTEGRITY_ERRORS:
                 # UNIQUE(election_id, student_id, post) — safety net.
                 conn.rollback()
                 post_label = f" for the post of {post}" if post else ""

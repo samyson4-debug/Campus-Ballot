@@ -137,6 +137,192 @@ CREATE INDEX IF NOT EXISTS idx_applications_election_status
 """
 
 
+def _migrate_postgres(conn) -> None:
+    """
+    Idempotent migration for PostgreSQL (Render, Supabase, Neon):
+    - add results_declared to elections if missing
+    - add post to candidates if missing
+    - add post to candidate_applications if missing
+    - add post to votes if missing (DEFAULT '')
+    - drop obsolete UNIQUE(election_id, student_id) constraint on votes
+    - add UNIQUE(election_id, student_id, post) constraint on votes
+    - drop obsolete UNIQUE(election_id, student_id) on candidate_applications
+    - add UNIQUE(election_id, student_id, post) on candidate_applications
+    - backfill candidate posts
+    - backfill votes posts
+    - insert counterpart candidates for election 1
+    - add performance indexes
+    """
+    logger.info("Running PostgreSQL migrations...")
+
+    # 1. Add missing columns safely
+    column_migrations = [
+        "ALTER TABLE elections ADD COLUMN IF NOT EXISTS results_declared INTEGER DEFAULT 0",
+        "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS post TEXT",
+        "ALTER TABLE candidate_applications ADD COLUMN IF NOT EXISTS post TEXT",
+        "ALTER TABLE votes ADD COLUMN IF NOT EXISTS post TEXT NOT NULL DEFAULT ''",
+    ]
+    for sql in column_migrations:
+        try:
+            conn.execute(sql)
+            conn.commit()
+            logger.info("Postgres migration executed: %s", sql)
+        except Exception as e:
+            conn.rollback()
+            logger.warning("Postgres column migration note (%s): %s", sql, e)
+
+    # 2. Migrate votes unique constraint to support per-post voting
+    try:
+        cons = conn.execute("""
+            SELECT con.conname, pg_get_constraintdef(con.oid) AS condef
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+            WHERE rel.relname = 'votes' AND con.contype = 'u'
+        """).fetchall()
+
+        has_post_unique = False
+        for c in cons:
+            conname = c["conname"]
+            condef = (c["condef"] or "").lower()
+            if "election_id" in condef and "student_id" in condef:
+                if "post" in condef:
+                    has_post_unique = True
+                else:
+                    logger.info("Dropping obsolete unique constraint '%s' from votes", conname)
+                    conn.execute(f'ALTER TABLE votes DROP CONSTRAINT IF EXISTS "{conname}"')
+                    conn.commit()
+
+        if not has_post_unique:
+            try:
+                conn.execute(
+                    "ALTER TABLE votes ADD CONSTRAINT votes_election_student_post_key UNIQUE(election_id, student_id, post)"
+                )
+                conn.commit()
+                logger.info("Added UNIQUE(election_id, student_id, post) constraint to votes.")
+            except Exception as e:
+                conn.rollback()
+                logger.warning("Could not add votes_election_student_post_key: %s", e)
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Votes constraint migration inspection error: %s", e)
+
+    # 3. Migrate candidate_applications unique constraint to support per-post nomination
+    try:
+        app_cons = conn.execute("""
+            SELECT con.conname, pg_get_constraintdef(con.oid) AS condef
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+            WHERE rel.relname = 'candidate_applications' AND con.contype = 'u'
+        """).fetchall()
+
+        has_app_post_unique = False
+        for c in app_cons:
+            conname = c["conname"]
+            condef = (c["condef"] or "").lower()
+            if "election_id" in condef and "student_id" in condef:
+                if "post" in condef:
+                    has_app_post_unique = True
+                else:
+                    logger.info("Dropping obsolete unique constraint '%s' from candidate_applications", conname)
+                    conn.execute(f'ALTER TABLE candidate_applications DROP CONSTRAINT IF EXISTS "{conname}"')
+                    conn.commit()
+
+        if not has_app_post_unique:
+            try:
+                conn.execute(
+                    "ALTER TABLE candidate_applications ADD CONSTRAINT cand_apps_election_student_post_key UNIQUE(election_id, student_id, post)"
+                )
+                conn.commit()
+                logger.info("Added UNIQUE(election_id, student_id, post) constraint to candidate_applications.")
+            except Exception as e:
+                conn.rollback()
+                logger.warning("Could not add cand_apps_election_student_post_key: %s", e)
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Candidate applications constraint migration inspection error: %s", e)
+
+    # 4. Performance indexes
+    index_migrations = [
+        "CREATE INDEX IF NOT EXISTS idx_votes_election ON votes(election_id)",
+        "CREATE INDEX IF NOT EXISTS idx_votes_student ON votes(student_id)",
+        "CREATE INDEX IF NOT EXISTS idx_votes_election_post ON votes(election_id, post)",
+        "CREATE INDEX IF NOT EXISTS idx_candidates_election ON candidates(election_id)",
+        "CREATE INDEX IF NOT EXISTS idx_candidates_election_post ON candidates(election_id, post)",
+        "CREATE INDEX IF NOT EXISTS idx_applications_election_status ON candidate_applications(election_id, status)",
+    ]
+    for sql in index_migrations:
+        try:
+            conn.execute(sql)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.warning("Postgres index migration note (%s): %s", sql, e)
+
+    # 5. Backfill candidate posts
+    try:
+        post_defaults = {
+            "Alex Rivera": "President",
+            "Jordan Lee": "President",
+            "Samantha Chen": "Vice President",
+            "Rahul Patel": "Vice President",
+            "Marcus Johnson": "Secretary",
+            "Elena Gomez": "Secretary",
+            "Priya Sharma": "Class Representative",
+            "Liam Davies": "Class Representative",
+            "Aisha Khan": "Cultural Secretary",
+            "Lucas Martin": "Sports Secretary",
+        }
+        for name, default_post in post_defaults.items():
+            conn.execute(
+                "UPDATE candidates SET post = ? WHERE name = ? AND (post IS NULL OR post = '')",
+                (default_post, name),
+            )
+        conn.execute(
+            "UPDATE candidates SET post = 'President' WHERE post IS NULL OR post = ''"
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Backfilling candidate posts error: %s", e)
+
+    # 6. Counterpart candidates for election 1
+    try:
+        row_e1 = conn.execute("SELECT id FROM elections WHERE id = 1").fetchone()
+        if row_e1:
+            e1_cands = {r["name"] for r in conn.execute("SELECT name FROM candidates WHERE election_id = 1").fetchall()}
+            needed = [
+                ("Jordan Lee", "Mechanical Engineering", "President"),
+                ("Rahul Patel", "Civil Engineering", "Vice President"),
+                ("Elena Gomez", "Information Technology", "Secretary"),
+            ]
+            for name, dept, post in needed:
+                if name not in e1_cands:
+                    conn.execute(
+                        "INSERT INTO candidates (election_id, name, department, post) VALUES (1, ?, ?, ?)",
+                        (name, dept, post),
+                    )
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Counterpart candidates for election 1 error: %s", e)
+
+    # 7. Sync vote post from candidate if vote post is empty
+    try:
+        conn.execute("""
+            UPDATE votes
+            SET post = (SELECT COALESCE(c.post, '') FROM candidates c WHERE c.id = votes.candidate_id)
+            WHERE post = '' OR post IS NULL
+        """)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning("Sync vote posts error: %s", e)
+
+    logger.info("PostgreSQL migrations completed successfully.")
+
+
 def _migrate(conn) -> None:
     """
     Idempotent migration:
@@ -146,6 +332,7 @@ def _migrate(conn) -> None:
     - backfill candidate posts if missing.
     """
     if is_postgres():
+        _migrate_postgres(conn)
         return
 
     # 1. results_declared on elections
@@ -391,6 +578,7 @@ def create_database() -> None:
         try:
             conn.execute(POSTGRES_SCHEMA_SQL)
             conn.commit()
+            _migrate_postgres(conn)
             _bootstrap_admin(conn)
             _seed_default_students(conn)
             _seed_default_elections(conn)

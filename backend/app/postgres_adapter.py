@@ -94,6 +94,12 @@ class PostgresConnectionWrapper:
             cur.execute(trans_sql)
         return PostgresCursorWrapper(cur, self._raw_conn)
 
+    def executescript(self, sql_script: str):
+        cur = self._raw_conn.cursor()
+        trans_sql = translate_sql_for_postgres(sql_script)
+        cur.execute(trans_sql)
+        self.commit()
+
     def commit(self):
         self._raw_conn.commit()
 

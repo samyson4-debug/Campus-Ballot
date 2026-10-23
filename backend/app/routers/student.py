@@ -51,18 +51,33 @@ def student_dashboard(user: dict = Depends(require_student)):
             state = get_election_state(r["start_time"], r["end_time"], r["status"])
 
             # Candidates for this election with post
-            candidates = conn.execute(
-                "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
-                (r["id"],),
-            ).fetchall()
+            try:
+                candidates_raw = conn.execute(
+                    "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
+                    (r["id"],),
+                ).fetchall()
+            except Exception:
+                candidates_raw = conn.execute(
+                    "SELECT id, name, department FROM candidates WHERE election_id = ? ORDER BY name",
+                    (r["id"],),
+                ).fetchall()
+            candidates = [dict(c) for c in candidates_raw]
 
             # Student votes in this election
-            voted_rows = conn.execute(
-                "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
-                (r["id"], user["id"]),
-            ).fetchall()
-            voted_posts = [v["post"] for v in voted_rows]
-            cand_posts = {(c["post"] or "").strip() for c in candidates if (c["post"] or "").strip()}
+            try:
+                voted_rows_raw = conn.execute(
+                    "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
+                    (r["id"], user["id"]),
+                ).fetchall()
+            except Exception:
+                voted_rows_raw = conn.execute(
+                    "SELECT candidate_id FROM votes WHERE election_id = ? AND student_id = ?",
+                    (r["id"], user["id"]),
+                ).fetchall()
+            voted_rows = [dict(v) for v in voted_rows_raw]
+
+            voted_posts = [(v.get("post") or "").strip() for v in voted_rows if (v.get("post") or "").strip()]
+            cand_posts = {(c.get("post") or "").strip() for c in candidates if (c.get("post") or "").strip()}
             fully_voted = bool(cand_posts and cand_posts.issubset(set(voted_posts)))
             has_voted = bool(voted_rows)
 
@@ -90,17 +105,27 @@ def student_dashboard(user: dict = Depends(require_student)):
                 "has_voted": has_voted,
                 "fully_voted": fully_voted,
                 "voted_posts": voted_posts,
-                "candidates": [dict(c) for c in candidates],
+                "candidates": candidates,
                 "candidate_count": len(candidates),
             })
-        history_rows = conn.execute(
-            "SELECT v.id, v.voted_at, v.post, e.name AS election_name, c.name AS candidate_name "
-            "FROM votes v "
-            "JOIN elections e ON v.election_id = e.id "
-            "LEFT JOIN candidates c ON v.candidate_id = c.id "
-            "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 10",
-            (user["id"],),
-        ).fetchall()
+        try:
+            history_rows = conn.execute(
+                "SELECT v.id, v.voted_at, v.post, e.name AS election_name, c.name AS candidate_name "
+                "FROM votes v "
+                "JOIN elections e ON v.election_id = e.id "
+                "LEFT JOIN candidates c ON v.candidate_id = c.id "
+                "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 10",
+                (user["id"],),
+            ).fetchall()
+        except Exception:
+            history_rows = conn.execute(
+                "SELECT v.id, v.voted_at, '' AS post, e.name AS election_name, c.name AS candidate_name "
+                "FROM votes v "
+                "JOIN elections e ON v.election_id = e.id "
+                "LEFT JOIN candidates c ON v.candidate_id = c.id "
+                "WHERE v.student_id = ? ORDER BY v.id DESC LIMIT 10",
+                (user["id"],),
+            ).fetchall()
         participation_history = [dict(h) for h in history_rows]
         open_elections_count = sum(1 for e in elections if e["badge"] == "Voting Open")
     finally:
@@ -149,18 +174,32 @@ def get_candidates(election_id: int, user: dict = Depends(require_student)):
         if not election:
             raise HTTPException(status_code=404, detail="Election not found.")
 
-        rows = conn.execute(
-            "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
-            (election_id,),
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                "SELECT id, name, department, post FROM candidates WHERE election_id = ? ORDER BY post, name",
+                (election_id,),
+            ).fetchall()
+        except Exception:
+            rows = conn.execute(
+                "SELECT id, name, department FROM candidates WHERE election_id = ? ORDER BY name",
+                (election_id,),
+            ).fetchall()
         candidates = [dict(r) for r in rows]
 
         # Voted posts for this student in this election
-        voted_rows = conn.execute(
-            "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
-            (election_id, user["id"]),
-        ).fetchall()
-        voted_posts = [r["post"] for r in voted_rows]
+        try:
+            voted_rows_raw = conn.execute(
+                "SELECT candidate_id, post FROM votes WHERE election_id = ? AND student_id = ?",
+                (election_id, user["id"]),
+            ).fetchall()
+        except Exception:
+            voted_rows_raw = conn.execute(
+                "SELECT candidate_id FROM votes WHERE election_id = ? AND student_id = ?",
+                (election_id, user["id"]),
+            ).fetchall()
+        voted_rows = [dict(v) for v in voted_rows_raw]
+
+        voted_posts = [(r.get("post") or "").strip() for r in voted_rows if (r.get("post") or "").strip()]
         voted_cids = [r["candidate_id"] for r in voted_rows]
         posts = list(dict.fromkeys([(c.get("post") or "").strip() for c in candidates if (c.get("post") or "").strip()]))
     finally:
@@ -201,7 +240,7 @@ def get_student_results(election_id: int, user: dict = Depends(require_student))
             "FROM candidates c "
             "LEFT JOIN votes v ON c.id = v.candidate_id AND v.election_id = c.election_id "
             "WHERE c.election_id = ? "
-            "GROUP BY c.id "
+            "GROUP BY c.id, c.name, c.department, c.post "
             "ORDER BY c.post, vote_count DESC",
             (election_id,),
         ).fetchall()

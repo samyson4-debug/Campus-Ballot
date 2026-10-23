@@ -438,7 +438,7 @@ def get_results(election_id: int, user: dict = Depends(require_admin)):
             "FROM candidates c "
             "LEFT JOIN votes v ON c.id = v.candidate_id AND v.election_id = c.election_id "
             "WHERE c.election_id = ? "
-            "GROUP BY c.id "
+            "GROUP BY c.id, c.name, c.department, c.post "
             "ORDER BY c.post, vote_count DESC",
             (election_id,),
         ).fetchall()
