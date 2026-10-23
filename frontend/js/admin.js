@@ -677,29 +677,69 @@ async function renderElectionResults(electionId) {
         const sorted = [...results.results].sort((a, b) => b.vote_count - a.vote_count);
         const maxVotes = Math.max(...sorted.map((c) => c.vote_count), 1);
 
-        sorted.forEach((item, index) => {
+        // Post winners grid (if multi-post results)
+        if (results.post_winners && Object.keys(results.post_winners).length > 0) {
+            const winnersGrid = document.createElement('div');
+            winnersGrid.className = 'post-winners-grid';
+            Object.entries(results.post_winners).forEach(([post, w]) => {
+                const card = document.createElement('div');
+                card.className = 'post-winner-card';
+                const pct = results.total_votes > 0 ? ((w.vote_count / results.total_votes) * 100).toFixed(1) : '0.0';
+                card.innerHTML = `
+                    <div class="pw-post">🏷️ ${escapeHtml(post)}</div>
+                    <div class="pw-name">👑 ${escapeHtml(w.candidate_name)}</div>
+                    <div class="pw-meta">${escapeHtml(w.department || 'N/A')} • ${w.vote_count} votes (${pct}%)</div>
+                `;
+                winnersGrid.appendChild(card);
+            });
+            chartContainer.appendChild(winnersGrid);
+        }
+
+        // Group by post for bar chart
+        const postGrouped = {};
+        sorted.forEach(item => {
+            const p = (item.post || 'General').trim();
+            if (!postGrouped[p]) postGrouped[p] = [];
+            postGrouped[p].push(item);
+        });
+
+        Object.entries(postGrouped).forEach(([post, items]) => {
+            const postLabel = document.createElement('div');
+            postLabel.style.cssText = 'margin: 16px 0 8px; font-size:0.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--accent-light);';
+            postLabel.textContent = `🏷️ ${post}`;
+            chartContainer.appendChild(postLabel);
+
+            items.forEach((item, index) => {
+                const pct = results.total_votes > 0 ? ((item.vote_count / results.total_votes) * 100).toFixed(1) : '0.0';
+                const barWidth = Math.max((item.vote_count / maxVotes) * 100, item.vote_count > 0 ? 5 : 2);
+                const isWinner = index === 0 && item.vote_count > 0;
+
+                const barBox = document.createElement('div');
+                barBox.className = 'result-bar-container';
+                barBox.innerHTML = `
+                    <div class="result-bar-label">
+                        <span class="result-bar-name">${isWinner ? '👑 ' : ''}${escapeHtml(item.candidate_name)}
+                            <span class="cand-badge-branch" style="margin-left:6px;">🎓 ${escapeHtml(item.department || 'N/A')}</span>
+                        </span>
+                        <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
+                    </div>
+                    <div class="result-bar-track">
+                        <div class="result-bar-fill" style="width: ${barWidth}%;"></div>
+                    </div>
+                `;
+                chartContainer.appendChild(barBox);
+            });
+        });
+
+        // Table breakdown
+        let rank = 1;
+        sorted.forEach((item) => {
             const pct = results.total_votes > 0 ? ((item.vote_count / results.total_votes) * 100).toFixed(1) : '0.0';
-            const barWidth = Math.max((item.vote_count / maxVotes) * 100, item.vote_count > 0 ? 5 : 2);
-
-            // Chart row
-            const barBox = document.createElement('div');
-            barBox.className = 'result-bar-container';
-            barBox.innerHTML = `
-                <div class="result-bar-label">
-                    <span class="result-bar-name">${index === 0 && item.vote_count > 0 ? '👑 ' : ''}${escapeHtml(item.candidate_name)} (${escapeHtml(item.department || 'General')})</span>
-                    <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
-                </div>
-                <div class="result-bar-track">
-                    <div class="result-bar-fill" style="width: ${barWidth}%;"></div>
-                </div>
-            `;
-            chartContainer.appendChild(barBox);
-
-            // Table row
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td style="font-weight: 700;">#${index + 1}</td>
-                <td style="font-weight: 600; color: var(--text-primary);">${index === 0 && item.vote_count > 0 ? '🏆 ' : ''}${escapeHtml(item.candidate_name)}</td>
+                <td style="font-weight: 700;">#${rank++}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)}</td>
+                <td><span class="cand-badge-post">${escapeHtml(item.post || 'General')}</span></td>
                 <td>${escapeHtml(item.department || '—')}</td>
                 <td style="font-weight: 700; color: var(--accent-light);">${item.vote_count}</td>
                 <td>${pct}%</td>

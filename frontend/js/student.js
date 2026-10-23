@@ -146,6 +146,26 @@ async function loadDashboard() {
                 const canVote = el.badge === 'Voting Open' && !el.has_voted;
                 const isDeclared = el.results_declared || el.badge === 'Results Available';
 
+                // Group candidates by post
+                const cands = el.candidates || [];
+                const postGroups = {};
+                cands.forEach(c => {
+                    const p = (c.post || 'General').trim();
+                    if (!postGroups[p]) postGroups[p] = [];
+                    postGroups[p].push(c);
+                });
+                const postGroupHtml = Object.entries(postGroups).map(([post, cs]) =>
+                    `<div style="margin-bottom:8px;">
+                        <div class="cand-badge-post" style="margin-bottom:6px;">🏷️ ${escapeHtml(post)}</div>
+                        <div class="election-candidates-preview">${cs.map(c =>
+                            `<div class="election-candidate-chip">
+                                <span class="chip-name">${escapeHtml(c.name)}</span>
+                                <span class="cand-badge-branch">🎓 ${escapeHtml(c.department || 'N/A')}</span>
+                            </div>`).join('')}
+                        </div>
+                    </div>`
+                ).join('');
+
                 card.innerHTML = `
                     <div class="card-header">
                         <span class="badge ${badgeClass}">${el.badge}</span>
@@ -154,12 +174,10 @@ async function loadDashboard() {
                     <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">
                         ${escapeHtml(el.name)}
                     </h3>
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px;">
                         Closes: <strong>${formatDate(el.end_time)}</strong>
                     </p>
-                    <div style="margin-bottom: 16px;">
-                        <span class="form-help">Approved Candidates: <strong>${el.candidate_count ?? (el.candidates ? el.candidates.length : 0)}</strong></span>
-                    </div>
+                    ${cands.length > 0 ? postGroupHtml : `<div style="margin-bottom:14px;"><span class="form-help">No candidates yet.</span></div>`}
                 `;
 
                 const footerDiv = document.createElement('div');
@@ -207,12 +225,14 @@ async function loadDashboard() {
         // Recent Activity History
         historyTbody.innerHTML = '';
         if (!dashboardData.participation_history || dashboardData.participation_history.length === 0) {
-            historyTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px; color: var(--text-muted);">No votes cast yet.</td></tr>';
+            historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px; color: var(--text-muted);">No votes cast yet.</td></tr>';
         } else {
             dashboardData.participation_history.forEach((item) => {
                 const tr = document.createElement('tr');
+                const postLabel = item.post ? escapeHtml(item.post) : '<span style="color:var(--text-muted)">—</span>';
                 tr.innerHTML = `
                     <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.election_name)}</td>
+                    <td><span class="cand-badge-post">${postLabel}</span></td>
                     <td><span class="badge badge-vote-submitted">Vote Recorded</span></td>
                     <td>${formatDate(item.voted_at)}</td>
                 `;
@@ -264,23 +284,51 @@ function setupVotingForm() {
             return;
         }
 
-        const selectedRadio = document.querySelector('input[name="candidate_choice"]:checked');
-        if (!selectedRadio) {
-            votingError.textContent = 'Select Candidate';
-            showToast('Select Candidate', 'warning');
+        // Collect one selected candidate per post
+        const postSections = document.querySelectorAll('.ballot-post-section:not(.already-voted)');
+        const selectedCandidates = [];
+        const selectedNames = [];
+        let allOk = true;
+
+        if (postSections.length > 0) {
+            postSections.forEach((section) => {
+                const postName = section.getAttribute('data-post');
+                const checked = section.querySelector('input[type="radio"]:checked');
+                if (checked) {
+                    selectedCandidates.push(parseInt(checked.value, 10));
+                    selectedNames.push(`${checked.getAttribute('data-name')} (${postName})`);
+                }
+                // Voting for a post is optional — students can skip some posts
+            });
+        } else {
+            // Fallback: single radio list
+            const selectedRadio = document.querySelector('input[name="candidate_choice"]:checked');
+            if (!selectedRadio) {
+                votingError.textContent = 'Please select at least one candidate.';
+                showToast('Please select at least one candidate.', 'warning');
+                allOk = false;
+            } else {
+                selectedCandidates.push(parseInt(selectedRadio.value, 10));
+                selectedNames.push(selectedRadio.getAttribute('data-name'));
+            }
+        }
+
+        if (!allOk || selectedCandidates.length === 0) {
+            if (selectedCandidates.length === 0) {
+                votingError.textContent = 'Please select at least one candidate before submitting.';
+                showToast('Please select at least one candidate.', 'warning');
+            }
             return;
         }
 
-        const candidateId = parseInt(selectedRadio.value, 10);
-        const candidateName = selectedRadio.getAttribute('data-name');
-
+        const namesList = selectedNames.map(n => `• ${n}`).join('\n');
         showModal({
             title: 'Confirm Your Vote',
-            message: `Are you sure you want to cast your official vote for "${candidateName}"?\n\nIMPORTANT: Once submitted, your vote is final and cannot be modified or withdrawn under any circumstances.`,
-            confirmText: 'Yes, Submit My Vote',
+            message: `You are about to cast your official vote(s) for:\n\n${namesList}\n\nIMPORTANT: Once submitted, your vote is final and cannot be changed.`,
+            confirmText: 'Yes, Submit My Votes',
             confirmClass: 'btn-primary',
             onConfirm: async () => {
-                await submitVote(electionId, candidateId);
+                await submitVote(electionId, selectedCandidates);
             },
         });
     });
@@ -327,6 +375,7 @@ async function loadBallot(electionId) {
     const candidatesList = document.getElementById('candidates-radio-list');
     const titleEl = document.getElementById('voting-election-title');
     const votingError = document.getElementById('voting-error');
+    const subtitleEl = document.getElementById('voting-ballot-subtitle');
 
     successCard.classList.add('hidden');
     emptyState.classList.add('hidden');
@@ -336,9 +385,11 @@ async function loadBallot(electionId) {
 
     try {
         const data = await api.get(`/api/student/elections/${electionId}/candidates`);
-        titleEl.textContent = `${data.election_name || 'Election'} Ballot`;
+        titleEl.textContent = `${data.election_name || 'Election'} — Ballot`;
 
         const candidates = Array.isArray(data) ? data : (data.candidates || []);
+        const votedPosts = data.voted_posts || [];
+        const votedCids = data.voted_candidate_ids || [];
 
         candidatesList.innerHTML = '';
         if (!candidates || candidates.length === 0) {
@@ -346,34 +397,98 @@ async function loadBallot(electionId) {
             return;
         }
 
-        candidates.forEach((cand) => {
-            const label = document.createElement('label');
-            label.className = 'radio-item';
-            const candName = cand.name || cand.candidate_name || `Candidate #${cand.id}`;
-            const candDept = cand.department || cand.post || 'General Candidate';
-
-            label.innerHTML = `
-                <input
-                    type="radio"
-                    name="candidate_choice"
-                    value="${cand.id}"
-                    data-name="${escapeHtml(candName)}"
-                    required
-                >
-                <div class="radio-item-info">
-                    <div class="radio-item-name">${escapeHtml(candName)}</div>
-                    <div class="radio-item-dept">${escapeHtml(candDept)}</div>
-                </div>
-            `;
-
-            // Visual feedback on click
-            label.addEventListener('click', () => {
-                document.querySelectorAll('.radio-item').forEach((item) => item.classList.remove('selected'));
-                label.classList.add('selected');
-            });
-
-            candidatesList.appendChild(label);
+        // Group candidates by post
+        const postGroups = {};
+        candidates.forEach((c) => {
+            const p = (c.post || 'General').trim();
+            if (!postGroups[p]) postGroups[p] = [];
+            postGroups[p].push(c);
         });
+        const posts = Object.keys(postGroups);
+        const hasMultiplePosts = posts.length > 1;
+
+        if (subtitleEl) {
+            if (hasMultiplePosts) {
+                subtitleEl.textContent = `This election has ${posts.length} posts. You can vote for one candidate per post. Select your choices below and submit.`;
+            } else {
+                subtitleEl.textContent = 'Select one candidate below to cast your ballot.';
+            }
+        }
+
+        posts.forEach((post) => {
+            const isVoted = votedPosts.includes(post);
+            const section = document.createElement('div');
+            section.className = 'ballot-post-section' + (isVoted ? ' already-voted' : '');
+            section.setAttribute('data-post', post);
+
+            const header = document.createElement('div');
+            header.className = 'ballot-post-header';
+            header.innerHTML = `
+                <div class="ballot-post-title">
+                    <span class="cand-badge-post">🏷️ ${escapeHtml(post)}</span>
+                </div>
+                ${isVoted ? '<span class="ballot-voted-notice">✓ Voted</span>' : ''}
+            `;
+            section.appendChild(header);
+
+            if (isVoted) {
+                const notice = document.createElement('p');
+                notice.className = 'form-help';
+                notice.style.color = 'var(--text-muted)';
+                notice.textContent = 'You have already cast your vote for this post.';
+                section.appendChild(notice);
+            } else {
+                const radioList = document.createElement('div');
+                radioList.className = 'radio-list';
+                radioList.style.marginTop = '0';
+
+                postGroups[post].forEach((cand) => {
+                    const label = document.createElement('label');
+                    label.className = 'radio-item';
+                    const candName = cand.name || `Candidate #${cand.id}`;
+                    const candDept = cand.department || 'N/A';
+
+                    label.innerHTML = `
+                        <input
+                            type="radio"
+                            name="candidate_post_${CSS.escape(post)}"
+                            value="${cand.id}"
+                            data-name="${escapeHtml(candName)}"
+                            data-post="${escapeHtml(post)}"
+                        >
+                        <div class="radio-item-info">
+                            <div class="radio-item-name">${escapeHtml(candName)}</div>
+                            <div class="radio-item-dept">
+                                <span class="cand-badge-branch">🎓 ${escapeHtml(candDept)}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    label.addEventListener('click', () => {
+                        // Deselect others within same post section
+                        radioList.querySelectorAll('.radio-item').forEach(i => i.classList.remove('selected'));
+                        label.classList.add('selected');
+                    });
+
+                    radioList.appendChild(label);
+                });
+
+                section.appendChild(radioList);
+            }
+
+            candidatesList.appendChild(section);
+        });
+
+        // Check if all posts already voted
+        const unvotedPosts = posts.filter(p => !votedPosts.includes(p));
+        if (unvotedPosts.length === 0 && posts.length > 0) {
+            const doneNote = document.createElement('div');
+            doneNote.className = 'ballot-voted-notice';
+            doneNote.style.marginTop = '16px';
+            doneNote.innerHTML = '✓ You have voted for all posts in this election.';
+            candidatesList.appendChild(doneNote);
+        }
+
     } catch (err) {
         ballotCard.classList.add('hidden');
         emptyState.classList.remove('hidden');
@@ -381,7 +496,7 @@ async function loadBallot(electionId) {
     }
 }
 
-async function submitVote(electionId, candidateId) {
+async function submitVote(electionId, candidateIds) {
     const submitBtn = document.getElementById('btn-submit-ballot');
     const votingError = document.getElementById('voting-error');
     const ballotCard = document.getElementById('voting-ballot-card');
@@ -391,17 +506,30 @@ async function submitVote(electionId, candidateId) {
     submitBtn.innerHTML = '<span class="spinner"></span> Securing Ballot...';
     votingError.textContent = '';
 
-    try {
-        await api.post(`/api/student/elections/${electionId}/vote`, {
-            candidate_id: candidateId,
-        });
+    // Support both single id (number) and array of ids
+    const ids = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+    const body = ids.length === 1
+        ? { candidate_id: ids[0] }
+        : { candidate_ids: ids };
 
-        // Show success screen
-        ballotCard.classList.add('hidden');
-        successCard.classList.remove('hidden');
-        showToast('Your vote has been officially recorded!', 'success');
+    try {
+        const resp = await api.post(`/api/student/elections/${electionId}/vote`, body);
+        const posts = resp.posts_voted || [];
+        const msg = posts.length > 0
+            ? `Vote recorded for: ${posts.join(', ')}!`
+            : 'Your vote has been officially recorded!';
+
+        // Reload ballot to show updated voted state
+        await loadBallot(electionId);
+        showToast(msg, 'success');
+
+        // Check if all posts are now voted
+        const remaining = document.querySelectorAll('.ballot-post-section:not(.already-voted)');
+        if (remaining.length === 0) {
+            ballotCard.classList.add('hidden');
+            successCard.classList.remove('hidden');
+        }
     } catch (err) {
-        // Master prompt scenarios: "Already Voted", "Voting Not Started", "Voting Closed"
         votingError.textContent = err.message || 'Voting failed.';
         showToast(err.message || 'Voting failed.', 'error');
     } finally {
@@ -607,14 +735,16 @@ async function loadProfileView() {
         historyTbody.innerHTML = '';
 
         if (!history || history.length === 0) {
-            historyTbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding: 20px; color: var(--text-muted);">No voting participation recorded yet.</td></tr>';
+            historyTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px; color: var(--text-muted);">No voting participation recorded yet.</td></tr>';
             return;
         }
 
         history.forEach((h) => {
             const tr = document.createElement('tr');
+            const postLabel = h.post ? `<span class="cand-badge-post">${escapeHtml(h.post)}</span>` : '<span style="color:var(--text-muted)">—</span>';
             tr.innerHTML = `
                 <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(h.election_name)}</td>
+                <td>${postLabel}</td>
                 <td>${formatDate(h.voted_at)}</td>
             `;
             historyTbody.appendChild(tr);
@@ -691,27 +821,69 @@ async function showStudentResultsModal(electionId) {
         const sorted = [...results.results].sort((a, b) => b.vote_count - a.vote_count);
         const maxVotes = Math.max(...sorted.map((c) => c.vote_count), 1);
 
-        sorted.forEach((item, index) => {
+        // Post winners section
+        if (results.post_winners && Object.keys(results.post_winners).length > 0) {
+            const winnersGrid = document.createElement('div');
+            winnersGrid.className = 'post-winners-grid';
+            Object.entries(results.post_winners).forEach(([post, w]) => {
+                const card = document.createElement('div');
+                card.className = 'post-winner-card';
+                const pct = totalVotes > 0 ? ((w.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+                card.innerHTML = `
+                    <div class="pw-post">🏷️ ${escapeHtml(post)}</div>
+                    <div class="pw-name">👑 ${escapeHtml(w.candidate_name)}</div>
+                    <div class="pw-meta">${escapeHtml(w.department || 'N/A')} • ${w.vote_count} votes (${pct}%)</div>
+                `;
+                winnersGrid.appendChild(card);
+            });
+            chartEl.appendChild(winnersGrid);
+        }
+
+        // Group results by post
+        const postGrouped = {};
+        sorted.forEach(item => {
+            const p = (item.post || 'General').trim();
+            if (!postGrouped[p]) postGrouped[p] = [];
+            postGrouped[p].push(item);
+        });
+
+        Object.entries(postGrouped).forEach(([post, items]) => {
+            // Post separator bar chart
+            const postLabel = document.createElement('div');
+            postLabel.style.cssText = 'margin: 16px 0 8px; font-size:0.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--accent-light);';
+            postLabel.textContent = `🏷️ ${post}`;
+            chartEl.appendChild(postLabel);
+
+            items.forEach((item, index) => {
+                const pct = totalVotes > 0 ? ((item.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
+                const barWidth = Math.max((item.vote_count / maxVotes) * 100, item.vote_count > 0 ? 5 : 2);
+                const isWinner = index === 0 && item.vote_count > 0;
+
+                const barBox = document.createElement('div');
+                barBox.className = 'result-bar-container';
+                barBox.innerHTML = `
+                    <div class="result-bar-label">
+                        <span class="result-bar-name">${isWinner ? '👑 ' : ''}${escapeHtml(item.candidate_name)}
+                            <span class="cand-badge-branch" style="margin-left:6px;">🎓 ${escapeHtml(item.department || 'N/A')}</span>
+                        </span>
+                        <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
+                    </div>
+                    <div class="result-bar-track">
+                        <div class="result-bar-fill" style="width: ${barWidth}%;"></div>
+                    </div>
+                `;
+                chartEl.appendChild(barBox);
+            });
+        });
+
+        let rank = 1;
+        sorted.forEach((item) => {
             const pct = totalVotes > 0 ? ((item.vote_count / totalVotes) * 100).toFixed(1) : '0.0';
-            const barWidth = Math.max((item.vote_count / maxVotes) * 100, item.vote_count > 0 ? 5 : 2);
-
-            const barBox = document.createElement('div');
-            barBox.className = 'result-bar-container';
-            barBox.innerHTML = `
-                <div class="result-bar-label">
-                    <span class="result-bar-name">${index === 0 && item.vote_count > 0 ? '👑 ' : ''}${escapeHtml(item.candidate_name)} (${escapeHtml(item.department || 'General')})</span>
-                    <span class="result-bar-count">${item.vote_count} votes (${pct}%)</span>
-                </div>
-                <div class="result-bar-track">
-                    <div class="result-bar-fill" style="width: ${barWidth}%;"></div>
-                </div>
-            `;
-            chartEl.appendChild(barBox);
-
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td style="font-weight: 700;">#${index + 1}</td>
-                <td style="font-weight: 600; color: var(--text-primary);">${index === 0 && item.vote_count > 0 ? '🏆 ' : ''}${escapeHtml(item.candidate_name)}</td>
+                <td style="font-weight: 700;">#${rank++}</td>
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.candidate_name)}</td>
+                <td><span class="cand-badge-post">${escapeHtml(item.post || 'General')}</span></td>
                 <td>${escapeHtml(item.department || '—')}</td>
                 <td style="font-weight: 700; color: var(--accent-light);">${item.vote_count}</td>
                 <td>${pct}%</td>
